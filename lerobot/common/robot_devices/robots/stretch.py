@@ -23,7 +23,7 @@ from stretch_body.robot import Robot as StretchAPI
 from stretch_body.robot_params import RobotParams
 
 from lerobot.common.robot_devices.robots.configs import StretchRobotConfig
-
+from lerobot.common.robot_devices.cameras.utils import make_cameras_from_configs
 
 class StretchRobot(StretchAPI):
     """Wrapper of stretch_body.robot.Robot"""
@@ -37,7 +37,10 @@ class StretchRobot(StretchAPI):
             self.config = replace(config, **kwargs)
 
         self.robot_type = self.config.type
-        self.cameras = self.config.cameras
+        self.cameras_configs = self.config.cameras
+
+        self.cameras = make_cameras_from_configs(self.cameras_configs)
+
         self.is_connected = False
         self.teleop = None
         self.logs = {}
@@ -48,6 +51,39 @@ class StretchRobot(StretchAPI):
 
         self.state_keys = None
         self.action_keys = None
+
+
+
+    @property
+    def camera_features(self) -> dict:
+        # TODO(yew)： 增加深度图像
+        cam_ft = {}
+        for cam_key, cam in self.cameras.items():
+            key = f"observation.images.{cam_key}"
+            cam_ft[key] = {
+                "shape": (cam.height, cam.width, cam.channels),
+                "names": ["height", "width", "channels"],
+                "info": None,
+            }
+        return cam_ft
+
+    @property
+    def motor_features(self) -> dict:
+        # TODO(yew): 后续修改为自定义的数据格式
+        observation_states = ["head_pan.pos", "head_tilt.pos", "lift.pos", "arm.pos", "wrist_pitch.pos", "wrist_roll.pos", "wrist_yaw.pos", "gripper.pos", "base_x.pos", "base_y.pos", "base_theta.pos"]    # 11个自由度
+        action_spaces = ['middle_led_ring_button_pressed', 'left_stick_x', 'left_stick_y', 'right_stick_x', 'right_stick_y', 'left_stick_button_pressed', 'right_stick_button_pressed', 'bottom_button_pressed', 'top_button_pressed', 'left_button_pressed', 'right_button_pressed', 'left_shoulder_button_pressed', 'right_shoulder_button_pressed', 'select_button_pressed', 'start_button_pressed', 'left_trigger_pulled', 'right_trigger_pulled', 'bottom_pad_pressed', 'top_pad_pressed', 'left_pad_pressed', 'right_pad_pressed',]
+        return {
+            "action": {
+                "dtype": "float32",
+                "shape": (len(action_spaces),),
+                "names": action_spaces,
+            },
+            "observation.state": {
+                "dtype": "float32",
+                "shape": (len(observation_states),),
+                "names": observation_states,
+            },
+        }
 
     def connect(self) -> None:
         self.is_connected = self.startup()
@@ -86,7 +122,8 @@ class StretchRobot(StretchAPI):
         self.logs["read_pos_dt_s"] = time.perf_counter() - before_read_t
 
         before_write_t = time.perf_counter()
-        self.teleop.do_motion(robot=self)
+        # self.teleop.do_motion(robot=self)       
+        self.teleop.do_motion(state=action, robot=self)     # 使用之前读到手柄输入，而不是重新等待
         self.push_command()
         self.logs["write_pos_dt_s"] = time.perf_counter() - before_write_t
 
@@ -128,9 +165,9 @@ class StretchRobot(StretchAPI):
             "wrist_roll.pos": status["end_of_arm"]["wrist_roll"]["pos"],
             "wrist_yaw.pos": status["end_of_arm"]["wrist_yaw"]["pos"],
             "gripper.pos": status["end_of_arm"]["stretch_gripper"]["pos"],
-            "base_x.vel": status["base"]["x_vel"],
-            "base_y.vel": status["base"]["y_vel"],
-            "base_theta.vel": status["base"]["theta_vel"],
+            "base_x.pos": status["base"]["x"],
+            "base_y.pos": status["base"]["y"],
+            "base_theta.pos": status["base"]["theta"],
         }
 
     def capture_observation(self) -> dict:
@@ -162,6 +199,8 @@ class StretchRobot(StretchAPI):
         return obs_dict
 
     def send_action(self, action: torch.Tensor) -> torch.Tensor:
+        # TODO(yew): 传输的action为手柄的输入，长为21的向量，后续需要按照我们规定的动作格式修改该函数，包括修改控制机器人移动的逻辑
+
         # TODO(aliberts): return ndarrays instead of torch.Tensors
         if not self.is_connected:
             raise ConnectionError()

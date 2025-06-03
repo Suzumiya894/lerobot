@@ -575,7 +575,7 @@ class StretchRobotConfig(RobotConfig):
                 rotation=-90,
             ),
             "head": IntelRealSenseCameraConfig(
-                name="Intel RealSense D435I",
+                name="Intel RealSense D435IF",
                 fps=30,
                 width=640,
                 height=480,

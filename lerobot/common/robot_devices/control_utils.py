@@ -177,6 +177,15 @@ def warmup_record(
     display_data,
     fps,
 ):
+    
+    if robot.robot_type.startswith("stretch"):
+        # For Stretch, we need to home the robot before starting the warmup
+        if not robot.is_homed():
+            robot.home()
+        # If the head is not in the 'tool' pose, we set it to 'tool'
+        robot.head.pose('tool')
+        robot.wait_command()
+
     control_loop(
         robot=robot,
         control_time_s=warmup_time_s,
@@ -298,6 +307,11 @@ def reset_environment(robot, events, reset_time_s, fps):
     # TODO(rcadene): refactor warmup_record and reset_environment
     if has_method(robot, "teleop_safety_stop"):
         robot.teleop_safety_stop()
+
+    if robot.robot_type.startswith("stretch"):
+        robot.home()
+        robot.head.pose('tool')
+        robot.wait_command()
 
     control_loop(
         robot=robot,
