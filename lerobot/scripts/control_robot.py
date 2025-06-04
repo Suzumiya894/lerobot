@@ -367,6 +367,33 @@ def replay(
         dt_s = time.perf_counter() - start_episode_t
         log_control_info(robot, dt_s, fps=cfg.fps)
 
+@safe_disconnect
+def stretch_replay_observations(
+    robot: Robot,
+    cfg: ReplayControlConfig,
+):
+    assert robot.robot_type.startswith("stretch"), "This function is only for Stretch robots."
+    dataset = LeRobotDataset(cfg.repo_id, root=cfg.root, episodes=[cfg.episode])
+    positions = dataset.hf_dataset.select_columns("observation.state")
+
+    if not robot.is_connected:
+        robot.connect()
+    
+    log_say("Replaying episode", cfg.play_sounds, blocking=True)
+    step = 10
+    num_frames = int(dataset.num_frames / step)
+    for idx in range(num_frames):
+        start_episode_t = time.perf_counter()
+
+        position = positions[idx * step]["observation.state"]
+        robot.send_pos_action(position)
+
+        dt_s = time.perf_counter() - start_episode_t
+        busy_wait(1 / cfg.fps - dt_s)
+
+        dt_s = time.perf_counter() - start_episode_t
+        log_control_info(robot, dt_s, fps=cfg.fps)
+    
 
 def _init_rerun(control_config: ControlConfig, session_name: str = "lerobot_control_loop") -> None:
     """Initializes the Rerun SDK for visualizing the control loop.
@@ -420,7 +447,10 @@ def control_robot(cfg: ControlPipelineConfig):
         _init_rerun(control_config=cfg.control, session_name="lerobot_control_loop_record")
         record(robot, cfg.control)
     elif isinstance(cfg.control, ReplayControlConfig):
-        replay(robot, cfg.control)
+        if robot.robot_type.startswith("stretch"):
+            stretch_replay_observations(robot, cfg.control)
+        else:
+            replay(robot, cfg.control)
     elif isinstance(cfg.control, RemoteRobotConfig):
         from lerobot.common.robot_devices.robots.lekiwi_remote import run_lekiwi
 
