@@ -436,11 +436,18 @@ class IntelRealSenseCamera:
             return color_image
 
     def read_loop(self):
-        while not self.stop_event.is_set():
-            if self.use_depth:
-                self.color_image, self.depth_map = self.read()
-            else:
-                self.color_image = self.read()
+        try:
+            while not self.stop_event.is_set():
+                if self.use_depth:
+                    self.color_image, self.depth_map = self.read()
+                else:
+                    self.color_image = self.read()
+        except Exception as e:
+            print(f"!!!!!!!! ERROR IN IntelRealSenseCamera read_loop THREAD ({self.serial_number}) !!!!!!!!")
+            import traceback
+            traceback.print_exc()
+        finally:
+            print(f"IntelRealSenseCamera read_loop ({self.serial_number}) is exiting.")
 
     def async_read(self):
         """Access the latest color image"""

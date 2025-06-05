@@ -66,6 +66,13 @@ class StretchRobot(StretchAPI):
                 "names": ["height", "width", "channels"],
                 "info": None,
             }
+            if hasattr(cam, "use_depth") and cam.use_depth:
+                depth_key = f"observation.images.{cam_key}_depth"
+                cam_ft[depth_key] = {
+                    "shape": (cam.height, cam.width), 
+                    "names": ["height", "width"],
+                    "info": None,
+                }
         return cam_ft
 
     @property
@@ -143,8 +150,13 @@ class StretchRobot(StretchAPI):
         images = {}
         for name in self.cameras:
             before_camread_t = time.perf_counter()
-            images[name] = self.cameras[name].async_read()
-            images[name] = torch.from_numpy(images[name])
+            if hasattr(self.cameras[name], "use_depth") and self.cameras[name].use_depth:
+                images[f"{name}_depth"], images[name] = self.cameras[name].async_read()
+                images[name] = torch.from_numpy(images[name])
+                images[f"{name}_depth"] = torch.from_numpy(images[f"{name}_depth"])
+            else:
+                images[name] = self.cameras[name].async_read()
+                images[name] = torch.from_numpy(images[name])
             self.logs[f"read_camera_{name}_dt_s"] = self.cameras[name].logs["delta_timestamp_s"]
             self.logs[f"async_read_camera_{name}_dt_s"] = time.perf_counter() - before_camread_t
 
@@ -154,6 +166,8 @@ class StretchRobot(StretchAPI):
         action_dict["action"] = velocity    # 使用关节的速度作为action
         for name in self.cameras:
             obs_dict[f"observation.images.{name}"] = images[name]
+            if hasattr(self.cameras[name], "use_depth") and self.cameras[name].use_depth:
+                obs_dict[f"observation.images.{name}_depth"] = images[f"{name}_depth"]
 
         return obs_dict, action_dict
 
@@ -221,8 +235,13 @@ class StretchRobot(StretchAPI):
         images = {}
         for name in self.cameras:
             before_camread_t = time.perf_counter()
-            images[name] = self.cameras[name].async_read()
-            images[name] = torch.from_numpy(images[name])
+            if hasattr(self.cameras[name], "use_depth") and self.cameras[name].use_depth:
+                images[f"{name}_depth"], images[name] = self.cameras[name].async_read()
+                images[name] = torch.from_numpy(images[name])
+                images[f"{name}_depth"] = torch.from_numpy(images[f"{name}_depth"])
+            else:
+                images[name] = self.cameras[name].async_read()
+                images[name] = torch.from_numpy(images[name])
             self.logs[f"read_camera_{name}_dt_s"] = self.cameras[name].logs["delta_timestamp_s"]
             self.logs[f"async_read_camera_{name}_dt_s"] = time.perf_counter() - before_camread_t
 
@@ -231,6 +250,8 @@ class StretchRobot(StretchAPI):
         obs_dict["observation.state"] = state
         for name in self.cameras:
             obs_dict[f"observation.images.{name}"] = images[name]
+            if hasattr(self.cameras[name], "use_depth") and self.cameras[name].use_depth:
+                obs_dict[f"observation.images.{name}_depth"] = images[f"{name}_depth"]
 
         return obs_dict
  

@@ -580,12 +580,14 @@ class StretchRobotConfig(RobotConfig):
                 width=640,
                 height=480,
                 rotation=90,
+                use_depth=False,
             ),
             "wrist": IntelRealSenseCameraConfig(
                 name="Intel RealSense D405",
                 fps=30,
                 width=640,
                 height=480,
+                use_depth=False,
             ),
         }
     )
