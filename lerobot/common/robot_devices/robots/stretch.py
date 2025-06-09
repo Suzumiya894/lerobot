@@ -54,7 +54,6 @@ class StretchRobot(StretchAPI):
         self.action_keys = None
 
 
-
     @property
     def camera_features(self) -> dict:
         # TODO(yew)： 增加深度图像
@@ -315,32 +314,36 @@ class StretchRobot(StretchAPI):
             self.push_command()
             self.wait_command()
 
-    def send_action(self, action: torch.Tensor) -> torch.Tensor:
-        # TODO(yew): 传输的action为手柄的输入，长为21的向量，后续需要按照我们规定的动作格式修改该函数，包括修改控制机器人移动的逻辑
+    def head_look_at_end(self) -> None:
+        self.head.pose('tool')
+        self.wait_command()
 
-        # TODO(aliberts): return ndarrays instead of torch.Tensors
-        if not self.is_connected:
-            raise ConnectionError()
+    # def send_action(self, action: torch.Tensor) -> torch.Tensor:
+    #     # TODO(yew): 传输的action为手柄的输入，长为21的向量，后续需要按照我们规定的动作格式修改该函数，包括修改控制机器人移动的逻辑
 
-        if self.teleop is None:
-            self.teleop = GamePadTeleop(robot_instance=False)
-            self.teleop.startup(robot=self)
+    #     # TODO(aliberts): return ndarrays instead of torch.Tensors
+    #     if not self.is_connected:
+    #         raise ConnectionError()
 
-        if self.action_keys is None:
-            dummy_action = self.teleop.gamepad_controller.get_state()
-            self.action_keys = list(dummy_action.keys())
+    #     if self.teleop is None:
+    #         self.teleop = GamePadTeleop(robot_instance=False)
+    #         self.teleop.startup(robot=self)
 
-        action_dict = dict(zip(self.action_keys, action.tolist(), strict=True))
+    #     if self.action_keys is None:
+    #         dummy_action = self.teleop.gamepad_controller.get_state()
+    #         self.action_keys = list(dummy_action.keys())
 
-        before_write_t = time.perf_counter()
-        self.teleop.do_motion(state=action_dict, robot=self)
-        self.push_command()
-        self.logs["write_pos_dt_s"] = time.perf_counter() - before_write_t
+    #     action_dict = dict(zip(self.action_keys, action.tolist(), strict=True))
 
-        # TODO(aliberts): return action_sent when motion is limited
-        return action
+    #     before_write_t = time.perf_counter()
+    #     self.teleop.do_motion(state=action_dict, robot=self)
+    #     self.push_command()
+    #     self.logs["write_pos_dt_s"] = time.perf_counter() - before_write_t
 
-    def send_pos_action(self, position: torch.Tensor) -> torch.Tensor:
+    #     # TODO(aliberts): return action_sent when motion is limited
+    #     return action
+
+    def send_action(self, position: torch.Tensor) -> torch.Tensor:
         """
         使用关节绝对值控制机器人，底层调用stretch_body提供的api。
         """

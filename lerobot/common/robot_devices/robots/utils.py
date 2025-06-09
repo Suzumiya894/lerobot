@@ -79,9 +79,14 @@ def make_robot_from_config(config: RobotConfig):
 
         return MobileManipulator(config)
     else:
-        from lerobot.common.robot_devices.robots.stretch import StretchRobot
+        if hasattr(config, "is_remote_server") and config.is_remote_server:
+            from lerobot.common.robot_devices.robots.stretch_server import StretchRobotServer as StretchRobot
 
-        return StretchRobot(config)
+            return StretchRobot(config)
+        else:
+            from lerobot.common.robot_devices.robots.stretch import StretchRobot
+
+            return StretchRobot(config)
 
 
 def make_robot(robot_type: str, **kwargs) -> Robot:

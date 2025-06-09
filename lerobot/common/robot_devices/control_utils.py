@@ -109,6 +109,8 @@ def predict_action(observation, policy, device, use_amp):
     ):
         # Convert to pytorch format: channel first and float32 in [0,1] with batch dimension
         for name in observation:
+            if name == "task":
+                continue
             if "image" in name:
                 observation[name] = observation[name].type(torch.float32) / 255
                 observation[name] = observation[name].permute(2, 0, 1).contiguous()
@@ -183,8 +185,9 @@ def warmup_record(
         if not robot.is_homed():
             robot.home()
         # If the head is not in the 'tool' pose, we set it to 'tool'
-        robot.head.pose('tool')
-        robot.wait_command()
+        robot.head_look_at_end()
+        time.sleep(warmup_time_s)
+        return
 
     control_loop(
         robot=robot,
@@ -264,6 +267,7 @@ def control_loop(
             observation, action = robot.teleop_step(record_data=True)
         else:
             observation = robot.capture_observation()
+            observation['task'] = [single_task]
             action = None
 
             if policy is not None:
@@ -310,16 +314,16 @@ def reset_environment(robot, events, reset_time_s, fps):
 
     if robot.robot_type.startswith("stretch"):
         robot.home()
-        robot.head.pose('tool')
-        robot.wait_command()
+        robot.head_look_at_end()
 
-    control_loop(
-        robot=robot,
-        control_time_s=reset_time_s,
-        events=events,
-        fps=fps,
-        teleoperate=True,
-    )
+    time.sleep(reset_time_s)
+    # control_loop(
+    #     robot=robot,
+    #     control_time_s=reset_time_s,
+    #     events=events,
+    #     fps=fps,
+    #     teleoperate=True,
+    # )
 
 
 def stop_recording(robot, listener, display_data):

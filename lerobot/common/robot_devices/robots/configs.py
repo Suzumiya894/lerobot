@@ -592,6 +592,9 @@ class StretchRobotConfig(RobotConfig):
 
     mock: bool = False
 
+    is_remote_server: bool = True
+    server_port: int = 65432
+
 
 @RobotConfig.register_subclass("lekiwi")
 @dataclass

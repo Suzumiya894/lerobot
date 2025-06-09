@@ -386,7 +386,7 @@ def stretch_replay_observations(
         start_episode_t = time.perf_counter()
 
         position = positions[idx * step]["observation.state"]
-        robot.send_pos_action(position)
+        robot.send_action(position)
 
         dt_s = time.perf_counter() - start_episode_t
         busy_wait(1 / cfg.fps - dt_s)
