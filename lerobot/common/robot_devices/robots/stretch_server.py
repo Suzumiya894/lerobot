@@ -1,10 +1,10 @@
 import socket
-import json
-import struct
+
 import time
 import torch
 
 from lerobot.common.robot_devices.robots.configs import StretchRobotConfig
+from lerobot.common.utils.remote_utils import recv_msg, send_msg
 
 class MockCamera:
     fps = 30
@@ -62,21 +62,14 @@ class StretchRobotServer:
         observation_data = recv_msg(self.conn)
         if observation_data is None:
             raise ConnectionError("Failed to receive data.")
-        for key, value in observation_data.items():
-            if 'image' in key:
-                observation_data[key] = torch.tensor(value, dtype=torch.uint8)
-            elif isinstance(value, list):
-                observation_data[key] = torch.tensor(value, dtype=torch.float32)
-            else:
-                raise TypeError(f"Unsupported data type for key '{key}': {type(value)}")
 
         self.logs["read_pos_dt_s"] = time.perf_counter() - before_read_t
         print(f"接收到来自机器人的数据。Observation.state: {observation_data.get('observation.state', None)}")
         return observation_data
     
     def send_action(self, position: torch.Tensor) -> torch.Tensor:
-        print(f"准备发送动作指令: {position.tolist()}")
-        send_msg(self.conn, position.tolist())
+        print(f"准备发送动作指令: {position}")
+        send_msg(self.conn, position)
         print("动作指令已发送。")
         return position
     
@@ -112,50 +105,3 @@ class StretchRobotServer:
         # TODO
         return 
     
-def send_msg(sock, msg_dict):
-    """
-    为消息添加固定长度的报头，然后发送。
-    """
-    # 将消息字典编码为字节
-    msg_bytes = json.dumps(msg_dict).encode('utf-8')
-    # 计算消息长度，并打包成一个4字节的整数
-    # '!' 表示网络字节序（大端），'I' 表示无符号整数 (4字节)
-    msg_len_header = struct.pack('!I', len(msg_bytes))
-    # 发送报头
-    sock.sendall(msg_len_header)
-    # 发送实际消息
-    sock.sendall(msg_bytes)
-
-def recv_msg(sock) -> dict:
-    """
-    接收固定长度的报头以确定消息大小，然后接收完整的消息。
-    """
-    # 首先接收4字节的报头
-    raw_msg_len = recv_all(sock, 4)
-    if not raw_msg_len:
-        return None
-    
-    # 解包报头以获取消息长度
-    msg_len = struct.unpack('!I', raw_msg_len)[0]
-    
-    # 根据获取的长度接收完整的消息
-    data_bytes = recv_all(sock, msg_len)
-    if data_bytes is None:
-        print(f"Connection closed by the Stretch client.")
-        return None
-    data = json.loads(data_bytes.decode('utf-8'))
-    return data
-
-def recv_all(sock, n) -> bytes:
-    """
-    一个辅助函数，确保从套接字接收到n个字节的数据。
-    这是必要的，因为单次recv可能不会返回所有请求的数据。
-    """
-    data = bytearray()
-    while len(data) < n:
-        # 从缓冲区接收数据
-        packet = sock.recv(n - len(data))
-        if not packet:
-            return None
-        data.extend(packet)
-    return data
