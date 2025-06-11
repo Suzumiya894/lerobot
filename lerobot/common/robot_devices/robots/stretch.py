@@ -352,6 +352,15 @@ class StretchRobot(StretchAPI):
         if not self.is_connected:
             raise ConnectionError()
         
+        move_head = True
+
+        if len(position) == 9:
+            position = [0.0, 0.0] + position.tolist()  # 补齐头部的角度
+            position = torch.tensor(position, dtype=torch.float32)
+            move_head = False
+
+        assert len(position) == 11, "Position tensor must have 11 elements corresponding to the robot's joints."
+
         # ["head_pan.pos", "head_tilt.pos", "lift.pos", "arm.pos", "wrist_pitch.pos", "wrist_roll.pos", "wrist_yaw.pos", "gripper.pos", "base_x.pos", "base_y.pos", "base_theta.pos", ]
 
         print("Origin position is ", self.get_state())
@@ -363,10 +372,11 @@ class StretchRobot(StretchAPI):
         )
         self.logs["move_to_base_pos_dt_s"] = time.perf_counter() - before_base_t
 
-        before_head_t = time.perf_counter()
-        self.head.move_to("head_pan", position[0].item())
-        self.head.move_to("head_tilt", position[1].item())
-        self.logs["move_to_head_dt_s"] = time.perf_counter() - before_head_t
+        if move_head:
+            before_head_t = time.perf_counter()
+            self.head.move_to("head_pan", position[0].item())
+            self.head.move_to("head_tilt", position[1].item())
+            self.logs["move_to_head_dt_s"] = time.perf_counter() - before_head_t
 
         before_wrist_t = time.perf_counter()
         self.end_of_arm.move_to("wrist_pitch", position[4].item())
