@@ -184,6 +184,7 @@ def warmup_record(
         # For Stretch, we need to home the robot before starting the warmup
         if not robot.is_homed():
             robot.home()
+            robot.base.reset_odometry()
         # If the head is not in the 'tool' pose, we set it to 'tool'
         robot.head_look_at_end()
         time.sleep(warmup_time_s)
@@ -313,7 +314,7 @@ def reset_environment(robot, events, reset_time_s, fps):
         robot.teleop_safety_stop()
 
     if robot.robot_type.startswith("stretch"):
-        robot.home()
+        robot.reset_to_home()
         robot.head_look_at_end()
 
     time.sleep(reset_time_s)

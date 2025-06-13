@@ -53,6 +53,7 @@ class StretchRobot(StretchAPI):
         self.state_keys = None
         self.action_keys = None
 
+        self.fast_reset_count = 0
 
     @property
     def camera_features(self) -> dict:
@@ -121,6 +122,10 @@ class StretchRobot(StretchAPI):
         before_read_t = time.perf_counter()
         state, velocity = self.get_state_and_velocity()  # 获取状态和速度
         action = self.teleop.gamepad_controller.get_state()
+
+        # 限制左摇杆只能前后移动，即机器人沿x轴移动
+        action['left_stick_x'] = 0.0
+        
         self.logs["read_pos_dt_s"] = time.perf_counter() - before_read_t
 
         before_write_t = time.perf_counter()
@@ -204,6 +209,44 @@ class StretchRobot(StretchAPI):
             "base_theta.vel": status["base"]["theta_vel"],
         }
         return state, velocity
+
+    def reset_to_home(self) -> None:
+        """
+        手动将机器人复位到默认位置，而不是调用home()。时间上有所提升，但准确度可能不如home()。
+        """
+        self.base.reset_odometry()  # 重置底盘位置
+        time.sleep(0.5)
+        if self.fast_reset_count >= 10:
+            # 每10次强制调用一次home()进行校准归位，避免累积误差
+            self.home()
+            self.fast_reset_count = 0
+            return
+
+        HOME_POS = {'head_pan.pos': -1.57, 'head_tilt.pos': -0.787, 'lift.pos': 0.60, 'arm.pos': 0.10, 'wrist_pitch.pos': -0.628, 'wrist_roll.pos': 0.0, 'wrist_yaw.pos': 0.00, 'gripper.pos': 0.00, 'base_x.pos': 0.00, 'base_y.pos': 0.00, 'base_theta.pos': 0.00}
+        self.send_action(torch.tensor(list(HOME_POS.values()), dtype=torch.float32))
+        state = self.get_state()
+        meter_delta, rad_delta = 0.01, 0.08  # 位置和角度的容差
+        force_home = False
+        for key, value in state.items():
+            if 'head' in key or 'wrist' in key or 'gripper' in key:
+                delta = rad_delta  # 头部和腕部关节使用弧度容差
+            else:
+                delta = meter_delta
+            if key != 'base_theta.pos':
+                if abs(value - HOME_POS[key]) > delta:
+                    print(f"Warning: {key} is not at home position. Current: {value}, Expected: {HOME_POS[key]}. Use home() instead.")
+                    force_home = True
+            else:
+                if value - 0.0 > delta and 6.283185307179586 - value > delta:
+                    print(f"Warning: {key} is not at home position. Current: {value}, Expected: {HOME_POS[key]}. Use home() instead.")
+                    force_home = True
+        if force_home:
+            self.home()  # 如果有偏差，调用home()进行精确复位
+            self.fast_reset_count = 0
+            return 
+        self.fast_reset_count += 1
+
+        
 
     def capture_observation(self) -> dict:
         # TODO(aliberts): return ndarrays instead of torch.Tensors
@@ -355,8 +398,7 @@ class StretchRobot(StretchAPI):
         move_head = True
 
         if len(position) == 9:
-            position = [0.0, 0.0] + position.tolist()  # 补齐头部的角度
-            position = torch.tensor(position, dtype=torch.float32)
+            position = torch.cat([torch.zeros(2, dtype=position.dtype, device=position.device), position])
             move_head = False
 
         assert len(position) == 11, "Position tensor must have 11 elements corresponding to the robot's joints."
