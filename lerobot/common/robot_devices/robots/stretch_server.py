@@ -63,15 +63,16 @@ class StretchRobotServer:
         if observation_data is None:
             raise ConnectionError("Failed to receive data.")
 
+        observation_data['observation.state'] = observation_data['observation.state'][2:-2]     # 前两个元素是head_pan 和 head_tilt，后两个元素是base_y 和base_theta
         self.logs["read_pos_dt_s"] = time.perf_counter() - before_read_t
         print(f"接收到来自机器人的数据。Observation.state: {observation_data.get('observation.state', None)}")
         return observation_data
     
-    def send_action(self, position: torch.Tensor) -> torch.Tensor:
-        print(f"准备发送动作指令: {position}")
-        send_msg(self.conn, position)
+    def send_action(self, action_args: torch.Tensor) -> torch.Tensor:
+        print(f"准备发送动作指令: {action_args}")
+        send_msg(self.conn, action_args)
         print("动作指令已发送。")
-        return position
+        return action_args
     
     @property
     def camera_features(self) -> dict:
@@ -79,8 +80,8 @@ class StretchRobotServer:
     
     @property
     def motor_features(self) -> dict:
-        observation_states = ["lift.pos", "arm.pos", "wrist_pitch.pos", "wrist_roll.pos", "wrist_yaw.pos", "gripper.pos", "base_x.pos", "base_y.pos", "base_theta.pos", ]    # 11个自由度，记录关节位置
-        action_spaces = ["lift.next_pos", "arm.next_pos", "wrist_pitch.next_pos", "wrist_roll.next_pos", "wrist_yaw.next_pos", "gripper.next_pos", "base_x.next_pos", "base_y.next_pos", "base_theta.next_pos",] # 11个自由度，记录关节速度
+        observation_states = ["lift.pos", "arm.pos", "wrist_pitch.pos", "wrist_roll.pos", "wrist_yaw.pos", "gripper.pos", "base_x.pos",]    
+        action_spaces = ["lift.next_pos", "arm.next_pos", "wrist_pitch.next_pos", "wrist_roll.next_pos", "wrist_yaw.next_pos", "gripper.next_pos", "base_x.next_pos"] 
         return {
             "action": {
                 "dtype": "float32",

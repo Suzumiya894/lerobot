@@ -594,6 +594,7 @@ class StretchRobotConfig(RobotConfig):
 
     is_remote_server: bool = True
     server_port: int = 65432
+    control_mode: str = "pos" # ['pos', 'vel']
 
 
 @RobotConfig.register_subclass("lekiwi")

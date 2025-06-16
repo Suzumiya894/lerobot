@@ -78,7 +78,6 @@ def run_robot(host, port=65432, action_history = []):
             observation_data = robot.capture_observation()
             
             observation_data.pop("observation.images.navigation", None)
-            observation_data['observation.state'] = observation_data['observation.state'][2:]  # 去掉前两个元素
             print(f"捕获环境观测耗时: {time.time() - capture_observation_start_time:.2f}秒")
             print("-" * 30 + f"Step {step}" + "-" * 30)
             step += 1
@@ -99,7 +98,7 @@ def run_robot(host, port=65432, action_history = []):
             print(f"从服务器接收到动作指令: {action_params}")
             
             action_start_time = time.time()
-            robot.send_pos_action(action_params)
+            robot.send_action(action_params)
             print(f"执行动作指令耗时: {time.time() - action_start_time:.2f}秒")
 
 if __name__ == "__main__":

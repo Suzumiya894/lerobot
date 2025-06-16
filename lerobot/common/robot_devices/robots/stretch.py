@@ -54,6 +54,7 @@ class StretchRobot(StretchAPI):
         self.action_keys = None
 
         self.fast_reset_count = 0
+        self.control_mode = self.config.control_mode
 
     @property
     def camera_features(self) -> dict:
@@ -223,7 +224,7 @@ class StretchRobot(StretchAPI):
             return
 
         HOME_POS = {'head_pan.pos': -1.57, 'head_tilt.pos': -0.787, 'lift.pos': 0.60, 'arm.pos': 0.10, 'wrist_pitch.pos': -0.628, 'wrist_roll.pos': 0.0, 'wrist_yaw.pos': 0.00, 'gripper.pos': 0.00, 'base_x.pos': 0.00, 'base_y.pos': 0.00, 'base_theta.pos': 0.00}
-        self.send_action(torch.tensor(list(HOME_POS.values()), dtype=torch.float32))
+        self.send_action(torch.tensor(list(HOME_POS.values()), dtype=torch.float32), control_mode='pos')  # 使用绝对位置控制机器人归位
         state = self.get_state()
         meter_delta, rad_delta = 0.01, 0.08  # 位置和角度的容差
         force_home = False
@@ -386,7 +387,76 @@ class StretchRobot(StretchAPI):
     #     # TODO(aliberts): return action_sent when motion is limited
     #     return action
 
-    def send_action(self, position: torch.Tensor) -> torch.Tensor:
+    def send_action(self, action_args: torch.Tensor, control_mode: str = None) -> torch.Tensor:
+        if control_mode is None:
+            control_mode = self.control_mode
+        assert control_mode in ['pos', 'vel'], "Control mode must be either 'pos' or 'vel'."
+        
+        if control_mode == 'pos':
+            return self.send_action_pos(action_args)
+        elif control_mode == 'vel':
+            return self.send_action_vel(action_args)
+
+    def send_action_vel(self, velocity: torch.Tensor) -> torch.Tensor:
+        vel_to_pos_coeff = 0.1 # TODO(yew): 针对不同关节，是否可以采用不同的系数？
+        if not self.is_connected:
+            raise ConnectionError()
+        
+        move_head = True
+
+        if len(velocity) == 9:
+            velocity = torch.cat([torch.zeros(2, dtype=velocity.dtype, device=velocity.device), velocity])
+            move_head = False
+        elif len(velocity) == 7:
+            velocity = torch.cat([torch.zeros(2, dtype=velocity.dtype, device=velocity.device), velocity, torch.zeros(2, dtype=velocity.dtype, device=velocity.device)])
+            move_head = False
+
+        assert len(velocity) == 11, "Velocity tensor must have 11 elements corresponding to the robot's joints."
+
+        # ["head_pan.vel", "head_tilt.vel", "lift.vel", "arm.vel", "wrist_pitch.vel", "wrist_roll.vel", "wrist_yaw.vel", "gripper.vel", "base_x.vel", "base_y.vel", "base_theta.vel"]
+        # 注意：Stretch机器人底盘只能沿着x轴移动，因此base_y.vel永远为0。
+
+        origin_pos = self.get_state()
+        print("Origin position is ", origin_pos)
+        print("target velocity is ", velocity)
+
+        before_base_t = time.perf_counter()
+        # 使用速度控制底盘时，先旋转底盘，然后再沿着x轴平移。
+        self.base.rotate_by(velocity[10].item() * vel_to_pos_coeff)
+        self.push_command()
+        self.wait_command()
+
+        self.base.translate_by(velocity[8].item() * vel_to_pos_coeff)
+        self.push_command()
+        self.wait_command()
+        self.logs["move_to_base_pos_dt_s"] = time.perf_counter() - before_base_t
+
+        if move_head:
+            before_head_t = time.perf_counter()
+            self.head.move_to("head_pan", origin_pos["head_pan.pos"] + velocity[0].item() * vel_to_pos_coeff)
+            self.head.move_to("head_tilt", origin_pos["head_tilt.pos"] + velocity[1].item() * vel_to_pos_coeff)
+            self.logs["move_to_head_dt_s"] = time.perf_counter() - before_head_t
+        
+        before_wrist_t = time.perf_counter()
+        self.end_of_arm.move_to("wrist_pitch", origin_pos["wrist_pitch.pos"] + velocity[4].item() * vel_to_pos_coeff)
+        self.end_of_arm.move_to("wrist_roll", origin_pos["wrist_roll.pos"] + velocity[5].item() * vel_to_pos_coeff)
+        self.end_of_arm.move_to("wrist_yaw", origin_pos["wrist_yaw.pos"] + velocity[6].item() * vel_to_pos_coeff)
+        # 夹爪采集的数据为pos，范围在-5.5~5.5之间；夹爪控制使用的是pos_pct，范围在-100~100之间，需要归一化
+        self.end_of_arm.move_to("stretch_gripper", (origin_pos["gripper.pos"] + velocity[7].item() * vel_to_pos_coeff) * 100 / 5.5)
+        self.wait_command()
+        self.logs["move_to_wrist_dt_s"] = time.perf_counter() - before_wrist_t
+
+        before_arm_lift_t = time.perf_counter()
+        self.lift.move_to(origin_pos["lift.pos"] + velocity[2].item() * vel_to_pos_coeff)
+        self.arm.move_to(origin_pos["arm.pos"] + velocity[3].item() * vel_to_pos_coeff)
+        self.push_command()
+        self.wait_command()
+        self.logs["move_to_lift_arm_dt_s"] = time.perf_counter() - before_arm_lift_t
+        
+        return velocity
+
+
+    def send_action_pos(self, position: torch.Tensor) -> torch.Tensor:
         """
         使用关节绝对值控制机器人，底层调用stretch_body提供的api。
         """
@@ -399,6 +469,9 @@ class StretchRobot(StretchAPI):
 
         if len(position) == 9:
             position = torch.cat([torch.zeros(2, dtype=position.dtype, device=position.device), position])
+            move_head = False
+        elif len(position) == 7:
+            position = torch.cat([torch.zeros(2, dtype=position.dtype, device=position.device), position, torch.zeros(2, dtype=position.dtype, device=position.device)])
             move_head = False
 
         assert len(position) == 11, "Position tensor must have 11 elements corresponding to the robot's joints."
