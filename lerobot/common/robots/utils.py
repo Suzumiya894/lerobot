@@ -42,9 +42,17 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
 
         return LeKiwi(config)
     elif config.type == "stretch3":
-        from .stretch3 import Stretch3Robot
+        # from .stretch3 import Stretch3Robot
 
-        return Stretch3Robot(config)
+        # return Stretch3Robot(config)
+        if hasattr(config, "is_remote_server") and config.is_remote_server:
+            from .stretch3 import StretchRobotServer
+
+            return StretchRobotServer(config)
+        else:
+            from .stretch3 import MyStretchRobot
+
+            return MyStretchRobot(config)
     elif config.type == "viperx":
         from .viperx import ViperX
 

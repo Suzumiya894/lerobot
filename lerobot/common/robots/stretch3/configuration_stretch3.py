@@ -33,14 +33,14 @@ class Stretch3RobotConfig(RobotConfig):
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
             "navigation": OpenCVCameraConfig(
-                index_or_path="/dev/hello-nav-head-camera",
+                camera_index="/dev/hello-nav-head-camera",
                 fps=10,
                 width=1280,
                 height=720,
                 rotation=-90,
             ),
             "head": RealSenseCameraConfig(
-                name="Intel RealSense D435I",
+                name="Intel RealSense D435IF",
                 fps=30,
                 width=640,
                 height=480,
@@ -56,3 +56,9 @@ class Stretch3RobotConfig(RobotConfig):
     )
 
     mock: bool = False
+
+    is_remote_server: bool = True
+    server_port: int = 65432
+    control_mode: str = "vel" # ['pos', 'vel']
+    control_action_use_head: bool = False
+    control_action_base_only_x: bool = True
