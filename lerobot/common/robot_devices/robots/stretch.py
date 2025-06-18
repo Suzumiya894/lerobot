@@ -55,8 +55,8 @@ class StretchRobot(StretchAPI):
 
         self.fast_reset_count = 0
         self.control_mode = self.config.control_mode
-        self.control_action_use_head = config.control_action_use_head
-        self.control_action_base_only_x = config.control_action_base_only_x
+        self.control_action_use_head = self.config.control_action_use_head
+        self.control_action_base_only_x = self.config.control_action_base_only_x
 
     @property
     def camera_features(self) -> dict:
@@ -401,7 +401,7 @@ class StretchRobot(StretchAPI):
             return self.send_action_vel(action_args)
 
     def send_action_vel(self, velocity: torch.Tensor) -> torch.Tensor:
-        vel_to_pos_coeff = 0.1 # TODO(yew): 针对不同关节，是否可以采用不同的系数？
+        vel_to_pos_coeff = 0.5 # TODO(yew): 针对不同关节，是否可以采用不同的系数？
         if not self.is_connected:
             raise ConnectionError()
         

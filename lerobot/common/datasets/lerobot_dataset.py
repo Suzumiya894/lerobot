@@ -875,9 +875,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
         assert len(parquet_files) == self.num_episodes
 
         # delete images
-        img_dir = self.root / "images"
-        if img_dir.is_dir():
-            shutil.rmtree(self.root / "images")
+        if len(self.meta.video_keys) > 0:    # 只有use_videos=True时才会将图像删除，只保留视频
+            img_dir = self.root / "images"
+            if img_dir.is_dir():
+                shutil.rmtree(self.root / "images")
 
         if not episode_data:  # Reset the buffer
             self.episode_buffer = self.create_episode_buffer()
