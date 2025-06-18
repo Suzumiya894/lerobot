@@ -14,6 +14,7 @@ class StretchRobotServer:
     Substitute for StretchRobot class, used for remote control of the Stretch Robot.
     Should run scripts/stretch_client_control.py on the real Stretch Robot to connect to this server.
     """
+    STRETCH_STATE = ["head_pan", "head_tilt", "lift", "arm", "wrist_pitch", "wrist_roll", "wrist_yaw", "gripper", "base_x", "base_y", "base_theta"]
     def __init__(self, config: StretchRobotConfig):
 
         print("Warning: This is the implementation of Stretch robot server, used for controlling the Stretch Robot remotely.\nIf this is not what you want, check lerobot/common/robot_devices/robots/configs.py and set is_remote_server to False.")
@@ -32,7 +33,10 @@ class StretchRobotServer:
         self.cameras = {'head': MockCamera(), 'wrist': MockCamera()}  # 模拟摄像头
         self.robot_type = config.type  
         self.logs = {}
-    
+
+        self.control_mode = config.control_mode
+        self.control_action_use_head = config.control_action_use_head
+        self.control_action_base_only_x = config.control_action_base_only_x
 
     def connect(self):
         print("Waiting for connection from Stretch robot...")
@@ -63,7 +67,10 @@ class StretchRobotServer:
         if observation_data is None:
             raise ConnectionError("Failed to receive data.")
 
-        observation_data['observation.state'] = observation_data['observation.state'][2:-2]     # 前两个元素是head_pan 和 head_tilt，后两个元素是base_y 和base_theta
+        if not self.control_action_use_head:
+            observation_data['observation.state'] = observation_data['observation.state'][2:]
+        if self.control_action_base_only_x:
+            observation_data['observation.state'] = observation_data['observation.state'][:-2]
         self.logs["read_pos_dt_s"] = time.perf_counter() - before_read_t
         print(f"接收到来自机器人的数据。Observation.state: {observation_data.get('observation.state', None)}")
         return observation_data
@@ -76,12 +83,19 @@ class StretchRobotServer:
     
     @property
     def camera_features(self) -> dict:
+        # 相机只包含训练的模型使用的特征，默认navigation相机不包含在内
         return {'observation.images.head': {'shape': (640, 480, 3), 'names': ['height', 'width', 'channels'], 'info': None}, 'observation.images.wrist': {'shape': (480, 640, 3), 'names': ['height', 'width', 'channels'], 'info': None}}
     
     @property
     def motor_features(self) -> dict:
-        observation_states = ["lift.pos", "arm.pos", "wrist_pitch.pos", "wrist_roll.pos", "wrist_yaw.pos", "gripper.pos", "base_x.pos",]    
-        action_spaces = ["lift.next_pos", "arm.next_pos", "wrist_pitch.next_pos", "wrist_roll.next_pos", "wrist_yaw.next_pos", "gripper.next_pos", "base_x.next_pos"] 
+        observation_states = [i + ".pos" for i in self.STRETCH_STATE]
+        action_spaces = [i + ".next_pos" if self.control_mode == "pos" else i + ".vel" for i in self.STRETCH_STATE]
+        if not self.control_action_use_head:
+            observation_states = observation_states[2:]
+            action_spaces = action_spaces[2:]
+        if self.control_action_base_only_x:
+            observation_states = observation_states[:-2]
+            action_spaces = action_spaces[:-2]
         return {
             "action": {
                 "dtype": "float32",

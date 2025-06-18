@@ -55,6 +55,8 @@ class StretchRobot(StretchAPI):
 
         self.fast_reset_count = 0
         self.control_mode = self.config.control_mode
+        self.control_action_use_head = config.control_action_use_head
+        self.control_action_base_only_x = config.control_action_base_only_x
 
     @property
     def camera_features(self) -> dict:
@@ -124,8 +126,9 @@ class StretchRobot(StretchAPI):
         state, velocity = self.get_state_and_velocity()  # 获取状态和速度
         action = self.teleop.gamepad_controller.get_state()
 
-        # 限制左摇杆只能前后移动，即机器人沿x轴移动
-        action['left_stick_x'] = 0.0
+        if self.control_action_base_only_x:
+            # 限制左摇杆只能前后移动，即机器人沿x轴移动
+            action['left_stick_x'] = 0.0
         
         self.logs["read_pos_dt_s"] = time.perf_counter() - before_read_t
 
