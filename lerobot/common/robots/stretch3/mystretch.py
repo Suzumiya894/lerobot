@@ -17,6 +17,7 @@
 import time
 import math
 from dataclasses import replace
+from functools import cached_property
 
 import numpy as np
 from stretch_body.gamepad_teleop import GamePadTeleop
@@ -30,25 +31,12 @@ from lerobot.common.datasets.utils import get_nested_item
 from ..robot import Robot
 from .configuration_stretch3 import Stretch3RobotConfig
 
-# {lerobot_keys: stretch.api.keys}
-STRETCH_MOTORS = {
-    "head_pan.pos": "head.head_pan.pos",
-    "head_tilt.pos": "head.head_tilt.pos",
-    "lift.pos": "lift.pos",
-    "arm.pos": "arm.pos",
-    "wrist_pitch.pos": "end_of_arm.wrist_pitch.pos",
-    "wrist_roll.pos": "end_of_arm.wrist_roll.pos",
-    "wrist_yaw.pos": "end_of_arm.wrist_yaw.pos",
-    "gripper.pos": "end_of_arm.stretch_gripper.pos",
-    "base_x.vel": "base.x_vel",
-    "base_y.vel": "base.y_vel",
-    "base_theta.vel": "base.theta_vel",
-}
-
 class MyStretchRobot(Robot):
     """My Implementation of Stretch3Robot"""
     config_class = Stretch3RobotConfig
     name = "stretch3"
+
+    STRETCH_STATE = ["head_pan", "head_tilt", "lift", "arm", "wrist_pitch", "wrist_roll", "wrist_yaw", "gripper", "base_x", "base_y", "base_theta"]
     def __init__(self, config: Stretch3RobotConfig | None = None, **kwargs):
         super().__init__()
         if config is None:
@@ -77,46 +65,28 @@ class MyStretchRobot(Robot):
         self.fast_reset_count = 0
         self.control_mode = self.config.control_mode
 
-    @property
-    def camera_features(self) -> dict[str, dict]:
-        # TODO(yew)： 增加深度图像
-        cam_ft = {}
-        for cam_key, cam in self.cameras.items():
-            cam_ft[cam_key] = {
-                "shape": (cam.height, cam.width, cam.channels),
-                "names": ["height", "width", "channels"],
-                "info": None,
-            }
-        return cam_ft
-    
-    @property
-    def observation_features(self) -> dict:
-        return {
-            "dtype": "float32",
-            "shape": (len(STRETCH_MOTORS),),
-            "names": {"motors": list(STRETCH_MOTORS)},
-        }
-    
-    @property
-    def action_features(self) -> dict:
-        return self.observation_features
+        self.observation_states = [i + ".pos" for i in self.STRETCH_STATE]
+        self.action_spaces = [i + ".vel" for i in self.STRETCH_STATE]
 
-    @property
-    def motor_features(self) -> dict:
-        observation_states = ["head_pan.pos", "head_tilt.pos", "lift.pos", "arm.pos", "wrist_pitch.pos", "wrist_roll.pos", "wrist_yaw.pos", "gripper.pos", "base_x.pos", "base_y.pos", "base_theta.pos", ]    # 11个自由度，记录关节位置
-        action_spaces = ["head_pan.vel", "head_tilt.vel", "lift.vel", "arm.vel", "wrist_pitch.vel", "wrist_roll.vel", "wrist_yaw.vel", "gripper.vel", "base_x.vel", "base_y.vel", "base_theta.vel"] # 11个自由度，记录关节速度
-        return {
-            "action": {
-                "dtype": "float32",
-                "shape": (len(action_spaces),),
-                "names": action_spaces,
-            },
-            OBS_STATE: {
-                "dtype": "float32",
-                "shape": (len(observation_states),),
-                "names": observation_states,
-            },
-        }
+    @cached_property
+    def _cameras_ft(self) -> dict[str, tuple[int, int, int]]:
+        return {name: (cfg.height, cfg.width, 3) for name, cfg in self.config.cameras.items()}
+    
+    @cached_property
+    def _state_ft(self) -> dict[str, type]:
+        return dict.fromkeys(
+            self.observation_states, float
+        )
+    
+    @cached_property
+    def action_features(self) -> dict:
+        return dict.fromkeys(
+            self.action_spaces, float
+        )
+
+    @cached_property
+    def observation_features(self) -> dict:
+        return {**self._state_ft, **self._cameras_ft}
 
     def connect(self) -> None:
         self.is_connected = self.api.startup()

@@ -33,21 +33,21 @@ class Stretch3RobotConfig(RobotConfig):
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
             "navigation": OpenCVCameraConfig(
-                camera_index="/dev/hello-nav-head-camera",
+                index_or_path="/dev/hello-nav-head-camera",
                 fps=10,
                 width=1280,
                 height=720,
                 rotation=-90,
             ),
             "head": RealSenseCameraConfig(
-                name="Intel RealSense D435IF",
+                serial_number_or_name="Intel RealSense D435IF",
                 fps=30,
                 width=640,
                 height=480,
                 rotation=90,
             ),
             "wrist": RealSenseCameraConfig(
-                name="Intel RealSense D405",
+                serial_number_or_name="Intel RealSense D405",
                 fps=30,
                 width=640,
                 height=480,
