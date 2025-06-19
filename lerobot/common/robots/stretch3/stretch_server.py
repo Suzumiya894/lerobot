@@ -65,6 +65,7 @@ class StretchRobotServer(Robot):
     @property
     def is_connected(self) -> bool:
         return self._is_connected
+    
     def disconnect(self):
         """Disconnect from the Stretch robot server."""
         if self.conn:
@@ -86,10 +87,10 @@ class StretchRobotServer(Robot):
         if observation_data is None:
             raise ConnectionError("Failed to receive data.")
 
-        if not self.control_action_use_head:
-            observation_data['observation.state'] = observation_data['observation.state'][2:]
-        if self.control_action_base_only_x:
-            observation_data['observation.state'] = observation_data['observation.state'][:-2]
+        # if not self.control_action_use_head:
+        #     observation_data['observation.state'] = observation_data['observation.state'][2:]
+        # if self.control_action_base_only_x:
+        #     observation_data['observation.state'] = observation_data['observation.state'][:-2]
         self.logs["read_pos_dt_s"] = time.perf_counter() - before_read_t
         print(f"接收到来自机器人的数据。Observation.state: {observation_data.get('observation.state', None)}")
         return observation_data

@@ -16,12 +16,21 @@ def pack_tensor(obj):
             b"dtype": obj_np.dtype.str,
             b"shape": obj_np.shape,
         }
+    elif isinstance(obj, np.ndarray):
+        return {
+            b"__numpy__": True,
+            b"data": obj.tobytes(),
+            b"dtype": obj.dtype.str,
+            b"shape": obj.shape,
+        }
     
     return obj
 
 def unpack_tensor(obj):
     if b"__tensor__" in obj:
         return torch.from_numpy(np.frombuffer(obj[b"data"], dtype=np.dtype(obj[b"dtype"])).reshape(obj[b"shape"]))
+    elif b"__numpy__" in obj:
+        return np.frombuffer(obj[b"data"], dtype=np.dtype(obj[b"dtype"])).reshape(obj[b"shape"])
     return obj
 
 packb = functools.partial(msgpack.packb, default=pack_tensor)

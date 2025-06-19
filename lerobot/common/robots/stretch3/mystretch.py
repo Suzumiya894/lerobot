@@ -18,7 +18,7 @@ import time
 import math
 from dataclasses import replace
 from functools import cached_property
-
+from typing import Any
 import numpy as np
 from stretch_body.gamepad_teleop import GamePadTeleop
 from stretch_body.robot import Robot as StretchAPI
@@ -37,13 +37,9 @@ class MyStretchRobot(Robot):
     name = "stretch3"
 
     STRETCH_STATE = ["head_pan", "head_tilt", "lift", "arm", "wrist_pitch", "wrist_roll", "wrist_yaw", "gripper", "base_x", "base_y", "base_theta"]
-    def __init__(self, config: Stretch3RobotConfig | None = None, **kwargs):
-        super().__init__()
-        if config is None:
-            self.config = Stretch3RobotConfig(**kwargs)
-        else:
-            # Overwrite config arguments using kwargs
-            self.config = replace(config, **kwargs)
+    def __init__(self, config: Stretch3RobotConfig):
+        super().__init__(config)
+        self.config = config
 
         self.robot_type = self.config.type
         self.cameras_configs = self.config.cameras
@@ -51,7 +47,7 @@ class MyStretchRobot(Robot):
         self.api = StretchAPI()
         self.cameras = make_cameras_from_configs(self.cameras_configs)
 
-        self.is_connected = False
+        self._is_connected = False
         self.teleop = None
         self.logs = {}
 
@@ -89,24 +85,35 @@ class MyStretchRobot(Robot):
         return {**self._state_ft, **self._cameras_ft}
 
     def connect(self) -> None:
-        self.is_connected = self.api.startup()
-        if not self.is_connected:
+        self._is_connected = self.api.startup()
+        if not self._is_connected:
             print("Another process is already using Stretch. Try running 'stretch_free_robot_process.py'")
             raise ConnectionError()
 
         for name in self.cameras:
             self.cameras[name].connect()
-            self.is_connected = self.is_connected and self.cameras[name].is_connected
+            self._is_connected = self._is_connected and self.cameras[name].is_connected
 
-        if not self.is_connected:
+        if not self._is_connected:
             print("Could not connect to the cameras, check that all cameras are plugged-in.")
             raise ConnectionError()
 
-        self.run_calibration()
+        self.calibrate()
 
-    def run_calibration(self) -> None:
+    def calibrate(self) -> None:
         if not self.api.is_homed():
             self.api.home()
+    
+    def is_calibrated(self) -> bool:
+        # TODO
+        pass
+
+    def configure(self):
+        pass
+
+    @property
+    def is_connected(self) -> bool:
+        return self._is_connected
 
     def teleop_step(
         self, record_data=False
@@ -115,7 +122,7 @@ class MyStretchRobot(Robot):
         在记录数据时，将各个关节的速度作为action存下来，而不是手柄输入。手柄输入现在仅用于控制机器人。
         """
         # TODO(aliberts): return ndarrays instead of torch.Tensors
-        if not self.is_connected:
+        if not self._is_connected:
             raise ConnectionError()
 
         if self.teleop is None:
@@ -151,15 +158,15 @@ class MyStretchRobot(Robot):
         for name in self.cameras:
             before_camread_t = time.perf_counter()
             images[name] = self.cameras[name].async_read()
-            self.logs[f"read_camera_{name}_dt_s"] = self.cameras[name].logs["delta_timestamp_s"]
             self.logs[f"async_read_camera_{name}_dt_s"] = time.perf_counter() - before_camread_t
 
         # Populate output dictionaries
-        obs_dict, action_dict = {}, {}
-        obs_dict[OBS_STATE] = state
+        action_dict = {}
+        obs_dict = {**state, **images}
         action_dict["action"] = velocity    # 使用关节的速度作为action
         for name in self.cameras:
-            obs_dict[f"{OBS_IMAGES}.{name}"] = images[name]
+            # obs_dict[f"{OBS_IMAGES}.{name}"] = images[name]
+            obs_dict[name] = images[name]
 
         return obs_dict, action_dict
 
@@ -251,7 +258,6 @@ class MyStretchRobot(Robot):
         
 
     def get_observation(self) -> dict[str, np.ndarray]:
-        obs_dict = {}
 
         # Read Stretch state
         before_read_t = time.perf_counter()
@@ -261,14 +267,14 @@ class MyStretchRobot(Robot):
         if self.state_keys is None:
             self.state_keys = list(state)
 
-        state = np.asarray(list(state.values()))
-        obs_dict[OBS_STATE] = state
+        # state = np.asarray(list(state.values()))
+        # obs_dict[OBS_STATE] = state
+        obs_dict = {**state}
 
         # Capture images from cameras
         for cam_key, cam in self.cameras.items():
             before_camread_t = time.perf_counter()
-            obs_dict[f"{OBS_IMAGES}.{cam_key}"] = cam.async_read()
-            self.logs[f"read_camera_{cam_key}_dt_s"] = cam.logs["delta_timestamp_s"]
+            obs_dict[cam_key] = cam.async_read()
             self.logs[f"async_read_camera_{cam_key}_dt_s"] = time.perf_counter() - before_camread_t
 
         return obs_dict
@@ -357,31 +363,24 @@ class MyStretchRobot(Robot):
     def head_look_at_end(self) -> None:
         self.api.head.pose('tool')
         self.api.wait_command()
-    def send_action(self, action_args: np.ndarray, control_mode: str = None) -> np.ndarray:
+
+    def send_action(self, action_args: dict[str, Any], control_mode: str = None) -> dict[str, Any]:
         if control_mode is None:
             control_mode = self.control_mode
         assert control_mode in ['pos', 'vel'], "Control mode must be either 'pos' or 'vel'."
-        
+
+        # 将 action_args 的键从 "head_pan.vel" 转换为 "head_pan" 等形式
+        parsed_action_args = {key.split('.')[0] : value for key, value in action_args.items()}
+
         if control_mode == 'pos':
-            return self.send_action_pos(action_args)
+            return self.send_action_pos(parsed_action_args)
         elif control_mode == 'vel':
-            return self.send_action_vel(action_args)
+            return self.send_action_vel(parsed_action_args)
 
-    def send_action_vel(self, velocity: np.ndarray) -> np.ndarray:
+    def send_action_vel(self, velocity: dict[str, Any]) -> dict[str, Any]:
         vel_to_pos_coeff = 0.1 # TODO(yew): 针对不同关节，是否可以采用不同的系数？
-        if not self.is_connected:
+        if not self._is_connected:
             raise ConnectionError()
-        
-        move_head = True
-
-        if len(velocity) == 9:
-            velocity = np.concatenate([np.zeros(2, dtype=velocity.dtype), velocity])
-            move_head = False
-        elif len(velocity) == 7:
-            velocity = np.concatenate([np.zeros(2, dtype=velocity.dtype), velocity, np.zeros(2, dtype=velocity.dtype)])
-            move_head = False
-
-        assert len(velocity) == 11, "Velocity tensor must have 11 elements corresponding to the robot's joints."
 
         # ["head_pan.vel", "head_tilt.vel", "lift.vel", "arm.vel", "wrist_pitch.vel", "wrist_roll.vel", "wrist_yaw.vel", "gripper.vel", "base_x.vel", "base_y.vel", "base_theta.vel"]
         # 注意：Stretch机器人底盘只能沿着x轴移动，因此base_y.vel永远为0。
@@ -390,94 +389,90 @@ class MyStretchRobot(Robot):
         print("Origin position is ", origin_pos)
         print("target velocity is ", velocity)
 
-        before_base_t = time.perf_counter()
-        # 使用速度控制底盘时，先旋转底盘，然后再沿着x轴平移。
-        self.api.base.rotate_by(velocity[10] * vel_to_pos_coeff)
-        self.api.push_command()
-        self.api.wait_command()
+        if "base_theta" in velocity:
+            # 使用速度控制底盘时，先旋转底盘，然后再沿着x轴平移。
+            self.api.base.rotate_by(velocity["base_theta"] * vel_to_pos_coeff)
+            self.api.push_command()
+            self.api.wait_command()
 
-        self.api.base.translate_by(velocity[8] * vel_to_pos_coeff)
-        self.api.push_command()
-        self.api.wait_command()
-        self.logs["move_to_base_pos_dt_s"] = time.perf_counter() - before_base_t
+        if "base_x" in velocity:
+            self.api.base.translate_by(velocity["base_x"] * vel_to_pos_coeff)
+            self.api.push_command()
+            self.api.wait_command()
 
-        if move_head:
-            before_head_t = time.perf_counter()
-            self.api.head.move_to("head_pan", origin_pos["head_pan.pos"] + velocity[0] * vel_to_pos_coeff)
-            self.api.head.move_to("head_tilt", origin_pos["head_tilt.pos"] + velocity[1] * vel_to_pos_coeff)
-            self.logs["move_to_head_dt_s"] = time.perf_counter() - before_head_t
+        if "head_pan" in velocity:
+            self.api.head.move_to("head_pan", origin_pos["head_pan.pos"] + velocity["head_pan"] * vel_to_pos_coeff)
+
+        if "head_tilt" in velocity:
+            self.api.head.move_to("head_tilt", origin_pos["head_tilt.pos"] + velocity["head_tilt"] * vel_to_pos_coeff)
         
-        before_wrist_t = time.perf_counter()
-        self.api.end_of_arm.move_to("wrist_pitch", origin_pos["wrist_pitch.pos"] + velocity[4] * vel_to_pos_coeff)
-        self.api.end_of_arm.move_to("wrist_roll", origin_pos["wrist_roll.pos"] + velocity[5] * vel_to_pos_coeff)
-        self.api.end_of_arm.move_to("wrist_yaw", origin_pos["wrist_yaw.pos"] + velocity[6] * vel_to_pos_coeff)
+        if "wrist_pitch" in velocity:
+            self.api.end_of_arm.move_to("wrist_pitch", origin_pos["wrist_pitch.pos"] + velocity["wrist_pitch"] * vel_to_pos_coeff)
+        if "wrist_roll" in velocity:
+            self.api.end_of_arm.move_to("wrist_roll", origin_pos["wrist_roll.pos"] + velocity["wrist_roll"] * vel_to_pos_coeff)
+        if "wrist_yaw" in velocity:
+            self.api.end_of_arm.move_to("wrist_yaw", origin_pos["wrist_yaw.pos"] + velocity["wrist_yaw"] * vel_to_pos_coeff)
         # 夹爪采集的数据为pos，范围在-5.5~5.5之间；夹爪控制使用的是pos_pct，范围在-100~100之间，需要归一化
-        self.api.end_of_arm.move_to("stretch_gripper", (origin_pos["gripper.pos"] + velocity[7] * vel_to_pos_coeff) * 100 / 5.5)
+        if "gripper" in velocity:
+            self.api.end_of_arm.move_to("stretch_gripper", (origin_pos["gripper.pos"] + velocity["gripper"] * vel_to_pos_coeff) * 100 / 5.5)
         self.api.wait_command()
-        self.logs["move_to_wrist_dt_s"] = time.perf_counter() - before_wrist_t
 
-        before_arm_lift_t = time.perf_counter()
-        self.api.lift.move_to(origin_pos["lift.pos"] + velocity[2] * vel_to_pos_coeff)
-        self.api.arm.move_to(origin_pos["arm.pos"] + velocity[3] * vel_to_pos_coeff)
+        if "lift" in velocity:
+            self.api.lift.move_to(origin_pos["lift.pos"] + velocity["lift"] * vel_to_pos_coeff)
+        if "arm" in velocity:
+            self.api.arm.move_to(origin_pos["arm.pos"] + velocity["arm"] * vel_to_pos_coeff)
         self.api.push_command()
         self.api.wait_command()
-        self.logs["move_to_lift_arm_dt_s"] = time.perf_counter() - before_arm_lift_t
         
         return velocity
 
 
-    def send_action_pos(self, position: np.ndarray) -> np.ndarray:
+    def send_action_pos(self, position: dict[str, Any]) -> dict[str, Any]:
         """
         使用关节绝对值控制机器人，底层调用stretch_body提供的api。
         """
         #TODO(yew): 操控各个关节的顺序是否会对结果有影响？
 
-        if not self.is_connected:
+        if not self._is_connected:
             raise ConnectionError()
-        
-        move_head = True
-
-        if len(position) == 9:
-            position = np.concatenate([np.zeros(2, dtype=position.dtype), position])
-            move_head = False
-        elif len(position) == 7:
-            position = np.concatenate([np.zeros(2, dtype=position.dtype), position, np.zeros(2, dtype=position.dtype)])
-            move_head = False
-
-        assert len(position) == 11, "Position tensor must have 11 elements corresponding to the robot's joints."
 
         # ["head_pan.pos", "head_tilt.pos", "lift.pos", "arm.pos", "wrist_pitch.pos", "wrist_roll.pos", "wrist_yaw.pos", "gripper.pos", "base_x.pos", "base_y.pos", "base_theta.pos", ]
 
         print("Origin position is ", self._get_state())
         print("target position is ", position)
 
-        before_base_t = time.perf_counter()
-        self.move_to_base_pos(
-            target_pose=(position[8], position[9], position[10])
-        )
-        self.logs["move_to_base_pos_dt_s"] = time.perf_counter() - before_base_t
+        if "base_x" in position:
+            if "base_y" in position and "base_theta" in position:
+                self.move_to_base_pos(
+                    target_pose=(position["base_x"], position["base_y"], position["base_theta"])
+                )
+            else:
+                self.move_to_base_pos(
+                    target_pose=(position["base_x"], 0.0, 0.0)
+                )
 
-        if move_head:
-            before_head_t = time.perf_counter()
-            self.api.head.move_to("head_pan", position[0])
-            self.api.head.move_to("head_tilt", position[1])
-            self.logs["move_to_head_dt_s"] = time.perf_counter() - before_head_t
+        if "head_pan" in position:
+            self.api.head.move_to("head_pan", position["head_pan"])
+        if "head_tilt" in position:
+            self.api.head.move_to("head_tilt", position["head_tilt"])
 
-        before_wrist_t = time.perf_counter()
-        self.api.end_of_arm.move_to("wrist_pitch", position[4])
-        self.api.end_of_arm.move_to("wrist_roll", position[5])
-        self.api.end_of_arm.move_to("wrist_yaw", position[6])
+        if "wrist_pitch" in position:
+            self.api.end_of_arm.move_to("wrist_pitch", position["wrist_pitch"])
+        if "wrist_roll" in position:
+            self.api.end_of_arm.move_to("wrist_roll", position["wrist_roll"])
+        if "wrist_yaw" in position:
+            self.api.end_of_arm.move_to("wrist_yaw", position["wrist_yaw"])
         # 夹爪采集的数据为pos，范围在-5.5~5.5之间；夹爪控制使用的是pos_pct，范围在-100~100之间，需要归一化
-        self.api.end_of_arm.move_to("stretch_gripper", position[7] * 100 / 5.5)
+        if "gripper" in position:
+            self.api.end_of_arm.move_to("stretch_gripper", position["gripper"] * 100 / 5.5)
         self.api.wait_command()
-        self.logs["move_to_wrist_dt_s"] = time.perf_counter() - before_wrist_t
 
-        before_arm_lift_t = time.perf_counter()
-        self.api.lift.move_to(position[2])
-        self.api.arm.move_to(position[3])
+        if "lift" in position:
+            self.api.lift.move_to(position["lift"])
+        if "arm" in position:
+            self.api.arm.move_to(position["arm"])
         self.api.push_command()
         self.api.wait_command()
-        self.logs["move_to_lift_arm_dt_s"] = time.perf_counter() - before_arm_lift_t
 
         print("Final position is ", self._get_state())
 
@@ -492,7 +487,7 @@ class MyStretchRobot(Robot):
             self.teleop._safety_stop(robot=self)
 
     def disconnect(self) -> None:
-        self.stop()
+        self.api.stop()
         if self.teleop is not None:
             self.teleop.gamepad_controller.stop()
             self.teleop.stop()
@@ -501,7 +496,15 @@ class MyStretchRobot(Robot):
             for cam in self.cameras.values():
                 cam.disconnect()
 
-        self.is_connected = False
+        self._is_connected = False
 
-    def __del__(self):
+    def __enter__(self):
+        self.connect()
+        return self
+    
+    def __exit__(self, exc_type, exc_value, traceback):
         self.disconnect()
+
+    # 在__del__中调用self.api.stop()会出现报错，原因是此时self.api，即stretch_body.robot.Robot中依赖的类已经被销毁。改为每次手动执行disconnect()或使用with语句。
+    # def __del__(self):
+    #     self.disconnect()

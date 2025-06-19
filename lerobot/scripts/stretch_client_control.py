@@ -3,17 +3,19 @@ import json
 import time
 import struct # 用于处理固定长度的报头
 import numpy as np
-import torch
 import matplotlib.pyplot as plt
 
-from lerobot.common.robot_devices.robots.stretch import StretchRobot
+from lerobot.common.robots.stretch3.mystretch import MyStretchRobot
+from lerobot.common.robots.stretch3.configuration_stretch3 import Stretch3RobotConfig
+
 from lerobot.common.utils.remote_utils import recv_msg, send_msg
 
-robot = StretchRobot()
+config = Stretch3RobotConfig()
+robot = MyStretchRobot(config)
 robot.connect()
 
-robot.head.pose('tool')
-robot.wait_command()
+robot.api.head.pose('tool')
+robot.api.wait_command()
 
 def plot_actions(action_history):
     joint_names = [
@@ -75,14 +77,14 @@ def run_robot(host, port=65432, action_history = []):
 
         while True:
             capture_observation_start_time = time.time()
-            observation_data = robot.capture_observation()
+            observation_data = robot.get_observation()
             
             observation_data.pop("observation.images.navigation", None)
             print(f"捕获环境观测耗时: {time.time() - capture_observation_start_time:.2f}秒")
             print("-" * 30 + f"Step {step}" + "-" * 30)
             step += 1
             # 使用新的函数发送完整的消息
-            print(f"发送环境观测。Observation.state: {observation_data['observation.state']}")
+            print(f"发送环境观测。")
             send_msg(s, observation_data)
             
             # 使用新的函数接收完整的消息
@@ -94,7 +96,6 @@ def run_robot(host, port=65432, action_history = []):
                 break
             
             action_history.append(action_params)
-            assert isinstance(action_params, torch.Tensor)
             print(f"从服务器接收到动作指令: {action_params}")
             
             action_start_time = time.time()
