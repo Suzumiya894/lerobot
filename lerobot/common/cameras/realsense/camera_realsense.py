@@ -139,8 +139,9 @@ class RealSenseCamera(Camera):
 
         if self.height and self.width:
             self.capture_width, self.capture_height = self.width, self.height
-            if self.rotation in [cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE]:
-                self.capture_width, self.capture_height = self.height, self.width
+            # TODO(yew): 和 OpenCVCamera 一样的bug，老版代码里capture_width和capture_height不会考虑旋转，但这里却考虑了旋转，导致rs.pipline.start出现报错
+            # if self.rotation in [cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE]:
+            #     self.capture_width, self.capture_height = self.height, self.width
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}({self.serial_number})"
@@ -215,7 +216,7 @@ class RealSenseCamera(Camera):
             camera_info = {
                 "name": device.get_info(rs.camera_info.name),
                 "type": "RealSense",
-                "id": device.get_info(rs.camera_info.serial_number),
+                "serial_number": device.get_info(rs.camera_info.serial_number),
                 "firmware_version": device.get_info(rs.camera_info.firmware_version),
                 "usb_type_descriptor": device.get_info(rs.camera_info.usb_type_descriptor),
                 "physical_port": device.get_info(rs.camera_info.physical_port),

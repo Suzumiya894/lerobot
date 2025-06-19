@@ -156,7 +156,7 @@ def save_image(
 def create_camera_instance(cam_meta: Dict[str, Any]) -> Dict[str, Any] | None:
     """Create and connect to a camera instance based on metadata."""
     cam_type = cam_meta.get("type")
-    cam_id = cam_meta.get("id")
+    cam_id = cam_meta.get("serial_number")
     instance = None
 
     logger.info(f"Preparing {cam_type} ID {cam_id} with default profile")

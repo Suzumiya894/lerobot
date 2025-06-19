@@ -125,8 +125,9 @@ class OpenCVCamera(Camera):
 
         if self.height and self.width:
             self.capture_width, self.capture_height = self.width, self.height
-            if self.rotation in [cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE]:
-                self.capture_width, self.capture_height = self.height, self.width
+            # TODO(yew): 这里的逻辑可能有问题，老版代码里capture_width和capture_height不会考虑旋转，但这里却考虑了旋转，导致后续一些验证的地方出现问题
+            # if self.rotation in [cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE]:
+            #     self.capture_width, self.capture_height = self.height, self.width
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}({self.index_or_path})"
@@ -211,6 +212,8 @@ class OpenCVCamera(Camera):
                 self.width, self.height = default_height, default_width
                 self.capture_width, self.capture_height = default_width, default_height
         else:
+            # TODO(yew): 这个validate函数逻辑应该有问题，之前在init时已经设置capture_width和capture_height为旋转后的width和height了，
+            # 但是在validate中好像并没有考虑到这一点，导致validate报错
             self._validate_width_and_height()
 
     def _validate_fps(self) -> None:
