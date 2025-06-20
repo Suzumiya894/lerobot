@@ -66,7 +66,8 @@ class MyStretchRobot(Robot):
 
     @cached_property
     def _cameras_ft(self) -> dict[str, tuple[int, int, int]]:
-        return {name: (cfg.height, cfg.width, 3) for name, cfg in self.config.cameras.items()}
+        # return {name: (cfg.height, cfg.width, 3) for name, cfg in self.config.cameras.items()}
+        return {"navigation":(1280, 720, 3), "head":(640, 480, 3), "wrist":(480, 640, 3)}   # 考虑旋转之后的features
     
     @cached_property
     def _state_ft(self) -> dict[str, type]:
@@ -103,10 +104,13 @@ class MyStretchRobot(Robot):
     def calibrate(self) -> None:
         if not self.api.is_homed():
             self.api.home()
+        self.head_look_at_end()
+        self.api.base.reset_odometry()  # 重置底盘位置
     
+    @property
     def is_calibrated(self) -> bool:
         # TODO
-        pass
+        return self.api.is_homed()
 
     def configure(self):
         pass
@@ -223,7 +227,6 @@ class MyStretchRobot(Robot):
         """
         手动将机器人复位到默认位置，而不是调用home()。时间上有所提升，但准确度可能不如home()。
         """
-        self.api.base.reset_odometry()  # 重置底盘位置
         time.sleep(0.5)
         if self.fast_reset_count >= 10:
             # 每10次强制调用一次home()进行校准归位，避免累积误差
@@ -232,7 +235,7 @@ class MyStretchRobot(Robot):
             return
 
         HOME_POS = {'head_pan.pos': -1.57, 'head_tilt.pos': -0.787, 'lift.pos': 0.60, 'arm.pos': 0.10, 'wrist_pitch.pos': -0.628, 'wrist_roll.pos': 0.0, 'wrist_yaw.pos': 0.00, 'gripper.pos': 0.00, 'base_x.pos': 0.00, 'base_y.pos': 0.00, 'base_theta.pos': 0.00}
-        self.send_action(np.array(list(HOME_POS.values()), dtype=np.float32), control_mode='pos')  # 使用绝对位置控制机器人归位
+        self.send_action(HOME_POS, control_mode='pos')  # 使用绝对位置控制机器人归位
         state = self._get_state()
         meter_delta, rad_delta = 0.01, 0.08  # 位置和角度的容差
         force_home = False
@@ -254,6 +257,7 @@ class MyStretchRobot(Robot):
             self.fast_reset_count = 0
             return 
         self.fast_reset_count += 1
+        self.api.base.reset_odometry()  # 重置底盘位置
 
         
 
@@ -364,6 +368,17 @@ class MyStretchRobot(Robot):
         self.api.head.pose('tool')
         self.api.wait_command()
 
+    def get_action(self) -> dict[str, Any]:
+        """
+        获得当前的action，用于在record - teleop过程中将action记录下来。\n
+        尽管Stretch在控制时分为pos和vel两种模式，但是在record采数据过程中统一保存vel为action，后续如有需要则要对数据集进行处理。
+        """
+        if not self._is_connected:
+            raise ConnectionError()
+        
+        _, velocity = self._get_state_and_velocity()  # 获取各关节状态和速度
+        return velocity
+
     def send_action(self, action_args: dict[str, Any], control_mode: str = None) -> dict[str, Any]:
         if control_mode is None:
             control_mode = self.control_mode
@@ -373,9 +388,10 @@ class MyStretchRobot(Robot):
         parsed_action_args = {key.split('.')[0] : value for key, value in action_args.items()}
 
         if control_mode == 'pos':
-            return self.send_action_pos(parsed_action_args)
+            self.send_action_pos(parsed_action_args)
         elif control_mode == 'vel':
-            return self.send_action_vel(parsed_action_args)
+            self.send_action_vel(parsed_action_args)
+        return action_args
 
     def send_action_vel(self, velocity: dict[str, Any]) -> dict[str, Any]:
         vel_to_pos_coeff = 0.1 # TODO(yew): 针对不同关节，是否可以采用不同的系数？

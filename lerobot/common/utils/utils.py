@@ -116,7 +116,6 @@ def init_logging(log_file: Path | None = None, display_pid: bool = False):
         dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         fnameline = f"{record.pathname}:{record.lineno}"
 
-        # NOTE: Display PID is useful for multi-process logging.
         if display_pid:
             pid_str = f"[PID: {os.getpid()}]"
             message = f"{record.levelname} {pid_str} {dt} {fnameline[-15:]:>15} {record.msg}"
@@ -124,21 +123,25 @@ def init_logging(log_file: Path | None = None, display_pid: bool = False):
             message = f"{record.levelname} {dt} {fnameline[-15:]:>15} {record.msg}"
         return message
 
-    logging.basicConfig(level=logging.INFO)
-
+    # 移除所有现有处理器
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
+
+    # 设置根记录器的级别
+    logging.getLogger().setLevel(logging.INFO) # 这里设置为INFO，只显示INFO及以上级别日志
 
     formatter = logging.Formatter()
     formatter.format = custom_format
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO) # 确保控制台处理器的级别也是INFO
+
     logging.getLogger().addHandler(console_handler)
 
     if log_file is not None:
-        # Additionally write logs to file
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(formatter)
+        file_handler.setLevel(logging.INFO) # 如果有文件处理器，也要设置级别
         logging.getLogger().addHandler(file_handler)
 
 

@@ -23,3 +23,5 @@ from ..config import TeleoperatorConfig
 @dataclass
 class Stretch3GamePadConfig(TeleoperatorConfig):
     mock: bool = False
+
+    control_action_base_only_x: bool = True

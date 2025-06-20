@@ -85,7 +85,7 @@ from lerobot.common.utils.visualization_utils import _init_rerun
 from lerobot.configs import parser
 from lerobot.configs.policies import PreTrainedConfig
 
-from .common.teleoperators import koch_leader, so100_leader, so101_leader  # noqa: F401
+from .common.teleoperators import koch_leader, so100_leader, so101_leader, stretch3_gamepad  # noqa: F401
 
 
 @dataclass
@@ -214,8 +214,14 @@ def record_loop(
 
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
-        sent_action = robot.send_action(action)
-
+        if teleop is not None and robot.name == "stretch3":
+            # For Stretch3, the action obtained from the teleoperator, which is the features of the gamepad, doesn't match the robot's action features. So we need to control the robot through the teleoperator.
+            teleop.send_action(action)
+            # After that, we get the real action from the Robot.
+            sent_action = robot.get_action()
+        else:
+            sent_action = robot.send_action(action)
+        
         if dataset is not None:
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
@@ -247,7 +253,6 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     robot = make_robot_from_config(cfg.robot)
     teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
 
-    import pdb; pdb.set_trace()
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)
     dataset_features = {**action_features, **obs_features}
@@ -283,9 +288,15 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
 
     robot.connect()
     if teleop is not None:
+        if robot.name == "stretch3":
+            teleop.set_robot(robot.api)
         teleop.connect()
 
     listener, events = init_keyboard_listener()
+
+    log_say("Warming Up. Waiting for 20 seconds...", cfg.play_sounds)
+    time.sleep(20) # Give time to the robot to connect and stabilize
+    robot.calibrate()
 
     for recorded_episodes in range(cfg.dataset.num_episodes):
         log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
@@ -307,15 +318,22 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
             (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
         ):
             log_say("Reset the environment", cfg.play_sounds)
-            record_loop(
-                robot=robot,
-                events=events,
-                fps=cfg.dataset.fps,
-                teleop=teleop,
-                control_time_s=cfg.dataset.reset_time_s,
-                single_task=cfg.dataset.single_task,
-                display_data=cfg.display_data,
-            )
+            if robot.name == "stretch3":
+                if teleop is not None:
+                    teleop.safety_stop()
+                robot.reset_to_home()
+                robot.head_look_at_end()
+                time.sleep(cfg.dataset.reset_time_s)
+            else:
+                record_loop(
+                    robot=robot,
+                    events=events,
+                    fps=cfg.dataset.fps,
+                    teleop=teleop,
+                    control_time_s=cfg.dataset.reset_time_s,
+                    single_task=cfg.dataset.single_task,
+                    display_data=cfg.display_data,
+                )
 
         if events["rerecord_episode"]:
             log_say("Re-record episode", cfg.play_sounds)
