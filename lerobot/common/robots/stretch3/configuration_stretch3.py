@@ -11,8 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import os
+import json
+from pathlib import Path
 from dataclasses import dataclass, field
+import lerobot
 
 from lerobot.common.cameras import CameraConfig
 from lerobot.common.cameras.opencv import OpenCVCameraConfig
@@ -57,8 +60,21 @@ class Stretch3RobotConfig(RobotConfig):
 
     mock: bool = False
 
-    is_remote_server: bool = True
+    is_remote_server: bool = False
     server_port: int = 65432
-    control_mode: str = "vel" # ['pos', 'vel']
+    control_mode: str = "pos" # ['pos', 'vel']
     control_action_use_head: bool = False
     control_action_base_only_x: bool = True
+
+project_root = Path(lerobot.__file__).parent.parent
+if os.path.isfile(os.path.join(project_root, "local_config.json")):
+    with open(os.path.join(project_root, "local_config.json"), "r") as f:
+        config_data = json.load(f)
+        try:
+            print("Use local configuration for Stretch3RobotConfig.")
+            for key, value in config_data["Stretch3RobotConfig"].items():
+                if hasattr(Stretch3RobotConfig, key):
+                    setattr(Stretch3RobotConfig, key, value)
+                    print(f"Set {key} to {value} in Stretch3RobotConfig.")
+        except:
+            print("Failed to load local configuration for Stretch3RobotConfig. Please check the format of local_config.json.")

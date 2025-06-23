@@ -1,0 +1,13 @@
+{
+    "Stretch3RobotConfig" : {
+        "is_remote_server" : true,
+        "server_port" : 65432,
+        "control_mode" : "pos",
+        "control_action_use_head" : false,
+        "control_action_base_only_x" : true
+    },
+    "Stretch3GamePadConfig" : {
+        "mock" : false,
+        "control_action_base_only_x" : true
+    }
+}
