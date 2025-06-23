@@ -12,9 +12,11 @@ from lerobot.common.utils.remote_utils import recv_msg, send_msg
 class MockCamera:
     fps = 30
 
-class StretchRobotServerAsync(Robot):
+class StretchRobotServer(Robot):
     config_class = Stretch3RobotConfig
     name = "stretch3"
+
+    STRETCH_STATE = ["head_pan", "head_tilt", "lift", "arm", "wrist_pitch", "wrist_roll", "wrist_yaw", "gripper", "base_x", "base_y", "base_theta"]
     def __init__(self, config: Stretch3RobotConfig):
 
         print("Warning: This is the implementation of Stretch robot server, used for controlling the Stretch Robot remotely.\nIf this is not what you want, check lerobot/common/robot_devices/robots/configs.py and set is_remote_server to False.")
@@ -53,6 +55,8 @@ class StretchRobotServerAsync(Robot):
         if self.control_action_base_only_x:
             self.observation_states = self.observation_states[:-2]
             self.action_spaces = self.action_spaces[:-2]
+
+        self.api = None # Mock API, no need to set it for the server
 
     @property
     def is_connected(self) -> bool:
