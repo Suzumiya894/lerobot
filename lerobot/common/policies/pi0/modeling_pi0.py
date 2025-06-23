@@ -382,7 +382,9 @@ class PI0Policy(PreTrainedPolicy):
         """Tokenize the text input"""
         device = batch[OBS_STATE].device
         tasks = batch["task"]
-
+        if isinstance(tasks, str):
+            tasks = [tasks]
+        
         # PaliGemma prompt has to end with a new line
         tasks = [task if task.endswith("\n") else f"{task}\n" for task in tasks]
 
