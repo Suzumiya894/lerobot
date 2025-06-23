@@ -138,6 +138,10 @@ def predict_action(
 
 
 def init_keyboard_listener():
+    """
+    对于非无头环境，使用pynput库来监听键盘事件。
+    在无头环境中，使用 readchar 库来监听键盘事件，返回threading.Thread和dict。
+    """
     # Allow to exit early while recording an episode or resetting the environment,
     # by tapping the right arrow key '->'. This might require a sudo permission
     # to allow your terminal to monitor keyboard events.
@@ -145,12 +149,37 @@ def init_keyboard_listener():
     events["exit_early"] = False
     events["rerecord_episode"] = False
     events["stop_recording"] = False
+    events["failure_recover"] = False
 
     if is_headless():
         logging.warning(
-            "Headless environment detected. On-screen cameras display and keyboard inputs will not be available."
+            "Headless environment detected. On-screen cameras display and keyboard inputs will not be available. Use readchar instead of pynput for keyboard events."
         )
-        listener = None
+
+        import readchar
+        import threading
+        def keyboard_listener():
+            """Dummy listener for headless environments."""
+            while not events["exit_early"]:
+                key = readchar.readkey()
+                if key == readchar.key.RIGHT:
+                    print("Right arrow key pressed. Exiting loop...")
+                    events["exit_early"] = True
+                elif key == readchar.key.LEFT:
+                    print("Left arrow key pressed. Exiting loop and rerecord the last episode...")
+                    events["rerecord_episode"] = True
+                    events["exit_early"] = True
+                elif key == readchar.key.ESC:
+                    print("Escape key pressed. Stopping data recording...")
+                    events["stop_recording"] = True
+                    events["exit_early"] = True
+                elif key == 'r':
+                    print("Key 'r' pressed. Attempting to recover from failure...")
+                    events["failure_recover"] = True
+        
+        listener = threading.Thread(target=keyboard_listener, daemon=True)
+        listener.start()
+
         return listener, events
 
     # Only import pynput if not in a headless environment
@@ -169,6 +198,9 @@ def init_keyboard_listener():
                 print("Escape key pressed. Stopping data recording...")
                 events["stop_recording"] = True
                 events["exit_early"] = True
+            elif key.char.lower() == 'r':
+                print("Key 'r' pressed. Attempting to recover from failure...")
+                events["failure_recover"] = True
         except Exception as e:
             print(f"Error handling key press: {e}")
 
