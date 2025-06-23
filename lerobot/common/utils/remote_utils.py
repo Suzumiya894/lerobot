@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import struct
 import time
@@ -36,59 +37,61 @@ def unpack_tensor(obj):
 packb = functools.partial(msgpack.packb, default=pack_tensor)
 unpackb = functools.partial(msgpack.unpackb, object_hook=unpack_tensor)
 
-def send_msg(sock, msg_dict):
+async def send_msg(writer: asyncio.StreamWriter, msg_dict):
     """
-    为消息添加固定长度的报头，然后发送。
+    为消息添加报头，并异步地发送给客户端。
+    注意：writer是异步IO对象，不再是socket。
     """
     send_msg_start_time = time.time()
-    msg_dict = {
-        'data': msg_dict,
-        'timestamp': time.time()  # 添加时间戳
-    }
-    # 将消息字典编码为字节
-    msg_bytes = packb(msg_dict)
-    # 计算消息长度，并打包成一个4字节的整数
-    msg_len_header = struct.pack('!I', len(msg_bytes))
-    # 发送报头
-    sock.sendall(msg_len_header)
-    # 发送实际消息
-    sock.sendall(msg_bytes)
-    print(f"发送消息和编码共耗时: {time.time() - send_msg_start_time:.2f}秒")
 
-def recv_msg(sock):
+    full_msg = {
+        'data': msg_dict,
+        'timestamp': time.time()
+    }
+    
+    msg_bytes = packb(full_msg, use_bin_type=True)
+    msg_len_header = struct.pack('!I', len(msg_bytes))
+
+    # 使用 writer.write() 发送数据，这是非阻塞的
+    writer.write(msg_len_header)
+    writer.write(msg_bytes)
+    
+    # 使用 await writer.drain() 等待缓冲区清空，确保数据已发出
+    # 这是异步IO的关键，它会将控制权交还给事件循环
+    await writer.drain()
+    print(f"发送消息和编码共耗时: {time.time() - send_msg_start_time:.4f}秒")
+async def recv_all(reader: asyncio.StreamReader, n: int) -> bytes | None:
     """
-    接收固定长度的报头以确定消息大小，然后接收完整的消息。
+    使用 asyncio.StreamReader 异步地、安全地接收 n 个字节。
     """
-    # 首先接收4字节的报头
-    raw_msg_len = recv_all(sock, 4)
+    try:
+        # reader.readexactly(n) 是一个健壮的方法，会等待直到接收到n个字节
+        data = await reader.readexactly(n)
+        return data
+    except asyncio.IncompleteReadError:
+        # 如果连接在读取完成前关闭，则会发生此异常
+        print("连接在读取数据时被对方关闭。")
+        return None
+
+async def recv_msg(reader: asyncio.StreamReader):
+    """
+    异步地接收完整的消息。
+    """
+    # 首先异步接收4字节的报头
+    raw_msg_len = await recv_all(reader, 4)
     if not raw_msg_len:
         return None
     
     encoding_start_time = time.time()
-    # 解包报头以获取消息长度
     msg_len = struct.unpack('!I', raw_msg_len)[0]
     
-    # 根据获取的长度接收完整的消息
-    data_bytes = recv_all(sock, msg_len)
+    # 根据长度异步接收完整的消息体
+    data_bytes = await recv_all(reader, msg_len)
     if data_bytes is None:
-        print(f"Connection closed by opposite side.")
         return None
-    msg = unpackb(data_bytes)
+        
+    msg = unpackb(data_bytes, raw=False)
     encoding_time = time.time() - encoding_start_time
-    print(f"解码消息共耗时: {encoding_time:.2f}秒")
-    print(f"网络传输消息共耗时: {time.time() - encoding_time - msg['timestamp']:.2f}秒")
+    print(f"解码消息共耗时: {encoding_time:.4f}秒")
+    print(f"网络传输消息共耗时: {time.time() - encoding_time - msg['timestamp']:.4f}秒")
     return msg['data']
-
-def recv_all(sock, n) -> bytes:
-    """
-    一个辅助函数，确保从套接字接收到n个字节的数据。
-    这是必要的，因为单次recv可能不会返回所有请求的数据。
-    """
-    data = bytearray()
-    while len(data) < n:
-        # 从缓冲区接收数据
-        packet = sock.recv(n - len(data))
-        if not packet:
-            return None
-        data.extend(packet)
-    return data
