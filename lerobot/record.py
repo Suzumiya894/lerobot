@@ -259,16 +259,21 @@ def stretch_server_record_loop(
         raise ValueError(f"The dataset fps should be equal to requested fps ({dataset.fps} != {fps}).")
 
     timestamp = 0
-    start_episode_t = time.perf_counter()
-    while timestamp < control_time_s:
+    episode_finished = False
+    while not episode_finished:
         start_loop_t = time.perf_counter()
 
         if events["exit_early"]:
             events["exit_early"] = False
             break
 
-        # stretch_client_teleop.py脚本中机器人端发送给服务器端的数据包含observation和action。
-        data_dict = robot.get_observation()
+        # stretch_client_teleop.py脚本中机器人端发送给服务器端的数据分为两种情况：
+        # 1. 包含observation和action。
+        # 2. 只包含{'episode_finished': True}，表示当前episode已完成。
+        data_dict = robot.get_observation() # get_observation()在stretch_server中的实现可以接受任意字典数据。 TODO(yew): 是否应该将其改为get_data()？
+        if "episode_finished" in data_dict:
+            episode_finished = data_dict["episode_finished"]
+            break
         observation = data_dict.get("observation", {})
         action = data_dict.get("action", {})
 
@@ -289,10 +294,9 @@ def stretch_server_record_loop(
                 if isinstance(val, float):
                     rr.log(f"action.{act}", rr.Scalar(val))
 
-        dt_s = time.perf_counter() - start_loop_t
-        busy_wait(1 / fps - dt_s)
+        # dt_s = time.perf_counter() - start_loop_t
+        # busy_wait(1 / fps - dt_s)
 
-        timestamp = time.perf_counter() - start_episode_t
 @parser.wrap()
 def record(cfg: RecordConfig) -> LeRobotDataset:
     init_logging()
@@ -344,8 +348,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
 
     listener, events = init_keyboard_listener()
 
-    log_say("Warming Up. Waiting for 20 seconds...", cfg.play_sounds)
-    time.sleep(20) # Give time to the robot to connect and stabilize
+    log_say("Warming Up. Waiting for 5 seconds...", cfg.play_sounds)
+    time.sleep(5) # Give time to the robot to connect and stabilize
     robot.calibrate()
 
     for recorded_episodes in range(cfg.dataset.num_episodes):

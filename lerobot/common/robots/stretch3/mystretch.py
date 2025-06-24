@@ -259,7 +259,13 @@ class MyStretchRobot(Robot):
         self.fast_reset_count += 1
         self.api.base.reset_odometry()  # 重置底盘位置
 
-        
+    def reset_base_odometry(self) -> None:
+        """
+        重置底盘位置信息为0。
+        """
+        if not self._is_connected:
+            raise ConnectionError()
+        self.api.base.reset_odometry()
 
     def get_observation(self) -> dict[str, np.ndarray]:
 
