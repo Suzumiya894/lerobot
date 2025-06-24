@@ -15,6 +15,10 @@
 # limitations under the License.
 import importlib
 import logging
+import json
+from pathlib import Path
+import lerobot
+import os
 
 
 def is_package_available(pkg_name: str, return_version: bool = False) -> tuple[bool, str] | bool:
@@ -56,6 +60,30 @@ def is_package_available(pkg_name: str, return_version: bool = False) -> tuple[b
     else:
         return package_exists
 
+def load_local_config(cls):
+    """
+    一个类装饰器，用于从 local_config.json 文件加载配置并覆盖类的默认属性。
+    """
+    project_root = Path(lerobot.__file__).parent.parent
+    local_config_path = os.path.join(project_root, "local_config.json")
+    config_key = cls.__name__  # 例如 "Stretch3RobotConfig"
+
+    if os.path.isfile(local_config_path):
+        print(f"Found local_config.json, attempting to override defaults for '{config_key}'.")
+        with open(local_config_path, "r") as f:
+            try:
+                config_data = json.load(f).get(config_key, {})
+                for key, value in config_data.items():
+                    if hasattr(cls, key):
+                        print(f"  - Overriding '{key}' with value '{value}'")
+                        setattr(cls, key, value)
+                    else:
+                        print(f"  - Warning: Key '{key}' from json is not a field in '{config_key}'.")
+            except Exception as e:
+                print(f"  - Error loading local config: {e}")
+    
+    # 必须返回这个类
+    return cls
 
 _torch_available, _torch_version = is_package_available("torch", return_version=True)
 _gym_xarm_available = is_package_available("gym_xarm")
