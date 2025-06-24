@@ -84,8 +84,7 @@ if __name__ == "__main__":
                         type=int, 
                         default=30, 
                         help='采集数据的帧率，默认为30 FPS')
-    parser.add_argument('--server_host',
-                        '--server-host', 
+    parser.add_argument('--host', 
                         type=str, 
                         default='10.176.44.2', 
                         help='服务器IP地址')

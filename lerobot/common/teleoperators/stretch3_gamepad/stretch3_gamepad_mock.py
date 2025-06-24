@@ -85,3 +85,6 @@ class Stretch3GamePad(Teleoperator):
 
     def disconnect(self) -> None:
         pass
+
+    def safety_stop(self):
+        pass

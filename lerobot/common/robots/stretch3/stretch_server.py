@@ -37,6 +37,7 @@ class StretchRobotServer(Robot):
         # 使用线程安全的 asyncio.Event
         self.connection_event = asyncio.Event()
         self.stop_event = asyncio.Event()
+        self.server_ready_event = threading.Event()
 
         self.cameras = {'head': MockCamera(), 'wrist': MockCamera()}  # 模拟摄像头
         self.robot_type = config.type 
@@ -95,7 +96,8 @@ class StretchRobotServer(Robot):
         """
         启动服务器并开始监听连接。
         """
-        self.loop = asyncio.get_running_loop()
+        if self.loop is None:
+            self.loop = asyncio.get_running_loop()
         server = await asyncio.start_server(
             self._handle_connection, self.host, self.port
         )
@@ -105,21 +107,54 @@ class StretchRobotServer(Robot):
         async with server:
             await server.serve_forever()
 
+
+    def wait_for_connection_sync(self, timeout: float = 60.0) -> bool:
+        async def wait_for_connection(timeout) -> bool:
+            try:
+                await asyncio.wait_for(self.connection_event.wait(), timeout)
+                return True
+            except asyncio.TimeoutError:
+                print(f"等待连接超时，超过 {timeout} 秒。")
+                return False
+        
+        if self.loop is None or not self.loop.is_running():
+            raise RuntimeError("事件循环未启动，无法等待连接。请先调用 connect() 启动服务器。")
+        future = asyncio.run_coroutine_threadsafe(wait_for_connection(timeout), self.loop)
+        return future.result()  # 阻塞直到协程完成
+
     def run_server_forever(self):
         """
         在一个单独的线程中运行服务器事件循环。
         这个方法可以在主线程中调用来启动服务器。
         """
         try:
-            asyncio.run(self.start())
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            self.server_ready_event.set()
+            self.loop.run_until_complete(self.start())
         except asyncio.CancelledError:
             print("服务器事件循环被停止。")
         except Exception as e:
             print(f"服务器发生错误: {e}")
+        finally:
+            if self.loop is not None:
+                self.loop.close()
     
     def connect(self):
         self.server_thread = threading.Thread(target=self.run_server_forever, daemon=True)
         self.server_thread.start()
+
+        server_is_ready = self.server_ready_event.wait(timeout=10.0)
+        if not server_is_ready:
+            self.disconnect()
+            raise RuntimeError("服务器未能在10秒内启动。请检查配置或网络连接。")
+        
+        print("等待客户端连接...")
+        connection_is_ready = self.wait_for_connection_sync(timeout=60)
+        if not connection_is_ready:
+            self.disconnect()
+            raise RuntimeError("未能在60秒内连接到客户端。请检查客户端是否已启动并尝试重新连接。")
+
     def disconnect(self):
         """
         从外部线程安全地停止服务器。
@@ -223,4 +258,7 @@ class StretchRobotServer(Robot):
     def head_look_at_end(self):
         # TODO
         pass 
+
+    def reset_to_home(self):
+        pass
     
