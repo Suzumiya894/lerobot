@@ -156,31 +156,35 @@ def init_keyboard_listener():
             "Headless environment detected. On-screen cameras display and keyboard inputs will not be available. Use readchar instead of pynput for keyboard events."
         )
 
-        import readchar
-        import threading
-        def keyboard_listener():
-            """Dummy listener for headless environments."""
-            while not events["exit_early"]:
-                key = readchar.readkey()
-                if key == readchar.key.RIGHT:
-                    print("Right arrow key pressed. Exiting loop...")
-                    events["exit_early"] = True
-                elif key == readchar.key.LEFT:
-                    print("Left arrow key pressed. Exiting loop and rerecord the last episode...")
-                    events["rerecord_episode"] = True
-                    events["exit_early"] = True
-                elif key == readchar.key.ESC:
-                    print("Escape key pressed. Stopping data recording...")
-                    events["stop_recording"] = True
-                    events["exit_early"] = True
-                elif key == 'r':
-                    print("Key 'r' pressed. Attempting to recover from failure...")
-                    events["failure_recover"] = True
-        
-        listener = threading.Thread(target=keyboard_listener, daemon=True)
-        listener.start()
+    # ----------------------------
+    # DEBUG: 使用MobaXterm时会出现可以成功import pynput，但无法监听键盘事件的问题。
+    # 因此调试时使用readchar库来监听键盘事件。
+    # ----------------------------
+    import readchar
+    import threading
+    def keyboard_listener():
+        """Dummy listener for headless environments."""
+        while not events["exit_early"]:
+            key = readchar.readkey()
+            if key == readchar.key.RIGHT:
+                print("\nRight arrow key pressed. Exiting loop...\n")
+                events["exit_early"] = True
+            elif key == readchar.key.LEFT:
+                print("\nLeft arrow key pressed. Exiting loop and rerecord the last episode...\n")
+                events["rerecord_episode"] = True
+                events["exit_early"] = True
+            elif key == readchar.key.ESC:
+                print("\nEscape key pressed. Stopping data recording...\n")
+                events["stop_recording"] = True
+                events["exit_early"] = True
+            elif key == 'r':
+                print("\nKey 'r' pressed. Attempting to recover from failure...\n")
+                events["failure_recover"] = True
+    
+    listener = threading.Thread(target=keyboard_listener, daemon=True)
+    listener.start()
 
-        return listener, events
+    return listener, events
 
     # Only import pynput if not in a headless environment
     from pynput import keyboard
@@ -247,3 +251,24 @@ def sanity_check_dataset_robot_compatibility(
         raise ValueError(
             "Dataset metadata compatibility check failed with mismatches:\n" + "\n".join(mismatches)
         )
+
+class RecoverySlidingWindow:
+    def __init__(self, window_size: int, recovery_steps: int):
+        self.window_size = window_size
+        self.recovery_steps = recovery_steps
+        self.window = [0] * window_size 
+        self.current_index = 0
+        self.oldest_index = 0
+
+    def add(self, action: dict):
+        if self.current_index - self.oldest_index >= self.window_size:
+            self.oldest_index += 1
+        self.window[self.current_index % self.window_size] = action
+        self.current_index += 1
+        
+    def get_recovery_actions(self):
+        recovery_index = max(self.oldest_index, self.current_index - self.recovery_steps)
+        print("Recovering steps: ", self.current_index - recovery_index)
+        self.current_index = recovery_index + 1
+        print("Recovery action: ", self.window[recovery_index % self.window_size])
+        return self.window[recovery_index % self.window_size]

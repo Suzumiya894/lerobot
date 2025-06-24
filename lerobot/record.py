@@ -75,6 +75,7 @@ from lerobot.common.utils.control_utils import (
     predict_action,
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
+    RecoverySlidingWindow
 )
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import (
@@ -159,10 +160,6 @@ class RecordConfig:
         """This enables the parser to load config from the policy using `--policy.path=local/dir`"""
         return ["policy"]
 
-def failure_recover(robot: Robot, sliding_window: list[dict], cur_step: int):
-    print("Failure detected, recovering...")
-    target_step = 0 if cur_step <= RECOVER_STEP else cur_step - RECOVER_STEP
-    robot.send_action(sliding_window[target_step % WINDOW_SIZE])
 
 
 @safe_stop_image_writer
@@ -187,8 +184,7 @@ def record_loop(
     timestamp = 0
     start_episode_t = time.perf_counter()
 
-    cur_step = 0
-    sliding_window = [0] * WINDOW_SIZE
+    sliding_window = RecoverySlidingWindow(WINDOW_SIZE, RECOVER_STEP)
 
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
@@ -196,11 +192,6 @@ def record_loop(
         if events["exit_early"]:
             events["exit_early"] = False
             break
-
-        if events["failure_recover"]:
-            events["failure_recover"] = False
-            failure_recover(robot, sliding_window, cur_step)
-            cur_step -= RECOVER_STEP
             
 
         observation = robot.get_observation()
@@ -227,6 +218,10 @@ def record_loop(
                 "The robot won't be at its rest position at the start of the next episode."
             )
             continue
+
+        if events["failure_recover"]:
+            events["failure_recover"] = False
+            action = sliding_window.get_recovery_actions()
 
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
@@ -257,8 +252,7 @@ def record_loop(
         busy_wait(1 / fps - dt_s)
 
         timestamp = time.perf_counter() - start_episode_t
-        sliding_window[cur_step % WINDOW_SIZE] = sent_action
-        cur_step += 1
+        sliding_window.add(sent_action)
 
 
 @parser.wrap()
@@ -384,7 +378,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     return dataset
 
 
-WINDOW_SIZE = 30
+WINDOW_SIZE = 50
 RECOVER_STEP = 15
 
 if __name__ == "__main__":
