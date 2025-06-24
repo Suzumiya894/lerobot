@@ -20,12 +20,14 @@ import lerobot
 from lerobot.common.cameras import CameraConfig
 from lerobot.common.cameras.opencv import OpenCVCameraConfig
 from lerobot.common.cameras.realsense import RealSenseCameraConfig
+from lerobot.common.utils.import_utils import load_local_config
 
 from ..config import RobotConfig
 
 
 @RobotConfig.register_subclass("stretch3")
 @dataclass
+@load_local_config
 class Stretch3RobotConfig(RobotConfig):
     # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
     # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
@@ -66,15 +68,3 @@ class Stretch3RobotConfig(RobotConfig):
     control_action_use_head: bool = False
     control_action_base_only_x: bool = True
 
-project_root = Path(lerobot.__file__).parent.parent
-if os.path.isfile(os.path.join(project_root, "local_config.json")):
-    with open(os.path.join(project_root, "local_config.json"), "r") as f:
-        config_data = json.load(f)
-        try:
-            print("Use local configuration for Stretch3RobotConfig.")
-            for key, value in config_data["Stretch3RobotConfig"].items():
-                if hasattr(Stretch3RobotConfig, key):
-                    setattr(Stretch3RobotConfig, key, value)
-                    print(f"Set {key} to {value} in Stretch3RobotConfig.")
-        except:
-            print("Failed to load local configuration for Stretch3RobotConfig. Please check the format of local_config.json.")
