@@ -106,6 +106,7 @@ class MyStretchRobot(Robot):
             self.api.home()
         self.head_look_at_end()
         self.api.base.reset_odometry()  # 重置底盘位置
+        self.api.base.pull_status()     # 确保底盘坐标重置为0
     
     @property
     def is_calibrated(self) -> bool:
@@ -234,30 +235,28 @@ class MyStretchRobot(Robot):
             self.fast_reset_count = 0
             return
 
-        HOME_POS = {'head_pan.pos': -1.57, 'head_tilt.pos': -0.787, 'lift.pos': 0.60, 'arm.pos': 0.10, 'wrist_pitch.pos': -0.628, 'wrist_roll.pos': 0.0, 'wrist_yaw.pos': 0.00, 'gripper.pos': 0.00, 'base_x.pos': 0.00, 'base_y.pos': 0.00, 'base_theta.pos': 0.00}
+        HOME_POS = {'head_pan.pos': -1.57, 'head_tilt.pos': -0.787, 'lift.pos': 0.60, 'arm.pos': 0.10, 'wrist_pitch.pos': -0.628, 'wrist_roll.pos': 0.0, 'wrist_yaw.pos': 0.00, 'gripper.pos': 0.00}    # 归位时不再归位底盘，而是手动归位底盘
         self.send_action(HOME_POS, control_mode='pos')  # 使用绝对位置控制机器人归位
         state = self._get_state()
         meter_delta, rad_delta = 0.01, 0.08  # 位置和角度的容差
         force_home = False
         for key, value in state.items():
+            if key not in HOME_POS:
+                continue
             if 'head' in key or 'wrist' in key or 'gripper' in key:
                 delta = rad_delta  # 头部和腕部关节使用弧度容差
             else:
                 delta = meter_delta
-            if key != 'base_theta.pos':
-                if abs(value - HOME_POS[key]) > delta:
-                    print(f"Warning: {key} is not at home position. Current: {value}, Expected: {HOME_POS[key]}. Use home() instead.")
-                    force_home = True
-            else:
-                if value - 0.0 > delta and 6.283185307179586 - value > delta:
-                    print(f"Warning: {key} is not at home position. Current: {value}, Expected: {HOME_POS[key]}. Use home() instead.")
-                    force_home = True
+            if abs(value - HOME_POS[key]) > delta:
+                print(f"Warning: {key} is not at home position. Current: {value}, Expected: {HOME_POS[key]}. Use home() instead.")
+                force_home = True
         if force_home:
             self.api.home()  # 如果有偏差，调用home()进行精确复位
             self.fast_reset_count = 0
             return 
         self.fast_reset_count += 1
         self.api.base.reset_odometry()  # 重置底盘位置
+        self.api.base.pull_status()     # 确保底盘坐标重置为0
 
         
 

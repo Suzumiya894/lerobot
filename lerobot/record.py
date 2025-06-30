@@ -312,29 +312,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
             display_data=cfg.display_data,
         )
 
-        # Execute a few seconds without recording to give time to manually reset the environment
-        # Skip reset for the last episode to be recorded
-        if not events["stop_recording"] and (
-            (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
-        ):
-            log_say("Reset the environment", cfg.play_sounds)
-            if robot.name == "stretch3":
-                if teleop is not None:
-                    teleop.safety_stop()
-                robot.reset_to_home()
-                robot.head_look_at_end()
-                time.sleep(cfg.dataset.reset_time_s)
-            else:
-                record_loop(
-                    robot=robot,
-                    events=events,
-                    fps=cfg.dataset.fps,
-                    teleop=teleop,
-                    control_time_s=cfg.dataset.reset_time_s,
-                    single_task=cfg.dataset.single_task,
-                    display_data=cfg.display_data,
-                )
-
+        start_reset_time = time.perf_counter()
+        log_say("Reset the environment", cfg.play_sounds)
         if events["rerecord_episode"]:
             log_say("Re-record episode", cfg.play_sounds)
             events["rerecord_episode"] = False
@@ -343,6 +322,31 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
             continue
 
         dataset.save_episode()
+        
+        # Execute a few seconds without recording to give time to manually reset the environment
+        # Skip reset for the last episode to be recorded
+        if not events["stop_recording"] and (
+            (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
+        ):
+            real_reset_time = max(cfg.dataset.reset_time_s - (time.perf_counter() - start_reset_time), 0)
+            if robot.name == "stretch3":
+                if teleop is not None:
+                    teleop.safety_stop()
+                robot.reset_to_home()
+                robot.head_look_at_end()
+                time.sleep(real_reset_time)
+            else:
+                record_loop(
+                    robot=robot,
+                    events=events,
+                    fps=cfg.dataset.fps,
+                    teleop=teleop,
+                    control_time_s=real_reset_time,
+                    single_task=cfg.dataset.single_task,
+                    display_data=cfg.display_data,
+                )
+
+        
 
         if events["stop_recording"]:
             break
