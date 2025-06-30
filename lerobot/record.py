@@ -43,6 +43,7 @@ from pprint import pformat
 
 import numpy as np
 import rerun as rr
+import threading
 
 from lerobot.common.cameras import (  # noqa: F401
     CameraConfig,  # noqa: F401
@@ -74,6 +75,7 @@ from lerobot.common.utils.control_utils import (
     predict_action,
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
+    RecoverySlidingWindow
 )
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import (
@@ -159,6 +161,7 @@ class RecordConfig:
         return ["policy"]
 
 
+
 @safe_stop_image_writer
 def record_loop(
     robot: Robot,
@@ -180,12 +183,16 @@ def record_loop(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
+
+    sliding_window = RecoverySlidingWindow(WINDOW_SIZE, RECOVER_STEP)
+
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
 
         if events["exit_early"]:
             events["exit_early"] = False
             break
+            
 
         observation = robot.get_observation()
 
@@ -211,6 +218,10 @@ def record_loop(
                 "The robot won't be at its rest position at the start of the next episode."
             )
             continue
+
+        if events["failure_recover"]:
+            events["failure_recover"] = False
+            action = sliding_window.get_recovery_actions()
 
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
@@ -241,6 +252,7 @@ def record_loop(
         busy_wait(1 / fps - dt_s)
 
         timestamp = time.perf_counter() - start_episode_t
+        sliding_window.add(sent_action)
 
 
 @parser.wrap()
@@ -358,7 +370,10 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         teleop.disconnect()
 
     if not is_headless() and listener is not None:
-        listener.stop()
+        if isinstance(listener, threading.Thread):
+            listener.join()
+        else:
+            listener.stop()
 
     if cfg.dataset.push_to_hub:
         dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
@@ -366,6 +381,9 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     log_say("Exiting", cfg.play_sounds)
     return dataset
 
+
+WINDOW_SIZE = 50
+RECOVER_STEP = 15
 
 if __name__ == "__main__":
     record()
