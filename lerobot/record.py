@@ -219,9 +219,9 @@ def record_loop(
             )
             continue
 
-        if events["failure_recover"]:
-            events["failure_recover"] = False
-            action = sliding_window.get_recovery_actions()
+        if events["failure_rollback_step"] > 0:
+            action = sliding_window.get_recovery_actions(events["failure_rollback_step"])
+            events["failure_rollback_step"] = 0
 
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
@@ -382,8 +382,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     return dataset
 
 
-WINDOW_SIZE = 50
-RECOVER_STEP = 15
+WINDOW_SIZE = 80
+RECOVER_STEP = 20
 
 if __name__ == "__main__":
     record()

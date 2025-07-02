@@ -25,7 +25,7 @@ class StretchRobotServer(Robot):
         print("Warning: This is the implementation of Stretch robot server, used for controlling the Stretch Robot remotely.\nIf this is not what you want, check lerobot/common/robot_devices/robots/configs.py and set is_remote_server to False.")
 
         self._is_connected = False
-        self.host = "10.176.44.2"  # 本地地址
+        self.host = "0.0.0.0"  # 本地地址
         self.port = config.server_port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # 设置地址重用，这样即使程序异常退出，端口也能立即被重新使用

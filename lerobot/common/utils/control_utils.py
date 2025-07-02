@@ -149,7 +149,7 @@ def init_keyboard_listener():
     events["exit_early"] = False
     events["rerecord_episode"] = False
     events["stop_recording"] = False
-    events["failure_recover"] = False
+    events["failure_rollback_step"] = 0
 
     if is_headless():
         logging.warning(
@@ -179,7 +179,7 @@ def init_keyboard_listener():
                 events["exit_early"] = True
             elif key == 'r':
                 print("\nKey 'r' pressed. Attempting to recover from failure...\n")
-                events["failure_recover"] = True
+                events["failure_rollback_step"] += 1
     
     listener = threading.Thread(target=keyboard_listener, daemon=True)
     listener.start()
@@ -204,7 +204,7 @@ def init_keyboard_listener():
                 events["exit_early"] = True
             elif key.char.lower() == 'r':
                 print("Key 'r' pressed. Attempting to recover from failure...")
-                events["failure_recover"] = True
+                events["failure_rollback_step"] += 1
         except Exception as e:
             print(f"Error handling key press: {e}")
 
@@ -266,8 +266,9 @@ class RecoverySlidingWindow:
         self.window[self.current_index % self.window_size] = action
         self.current_index += 1
         
-    def get_recovery_actions(self):
-        recovery_index = max(self.oldest_index, self.current_index - self.recovery_steps)
+    def get_recovery_actions(self, failure_rollback_step:int = 1):
+        real_recovery_steps = failure_rollback_step * self.recovery_steps
+        recovery_index = max(self.oldest_index, self.current_index - real_recovery_steps)
         print("Recovering steps: ", self.current_index - recovery_index)
         self.current_index = recovery_index + 1
         print("Recovery action: ", self.window[recovery_index % self.window_size])
