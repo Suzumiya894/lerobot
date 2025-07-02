@@ -4,6 +4,7 @@ import time
 import struct # 用于处理固定长度的报头
 import numpy as np
 import matplotlib.pyplot as plt
+import asyncio
 
 from lerobot.common.robots.stretch3.mystretch import MyStretchRobot
 from lerobot.common.robots.stretch3.configuration_stretch3 import Stretch3RobotConfig
@@ -62,7 +63,7 @@ def plot_actions(action_history):
     plt.show()
     plt.imsave("action_history_plot.png", fig.canvas.buffer_rgba(), format='png')
 
-def run_robot(host, port=65432, action_history = []):
+async def run_robot(host, port=65432, action_history = []):
     """
     运行机器人客户端，连接服务器并进行通信。
     """
@@ -85,11 +86,11 @@ def run_robot(host, port=65432, action_history = []):
             step += 1
             # 使用新的函数发送完整的消息
             print(f"发送环境观测。")
-            send_msg(s, observation_data)
+            await send_msg(s, observation_data)
             
             # 使用新的函数接收完整的消息
             print("等待服务器发送动作指令...")
-            action_params = recv_msg(s)
+            action_params = await recv_msg(s)
             
             if action_params is None:
                 print("与服务器的连接已断开。")
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     SERVER_HOST = '10.176.44.2'
     action_history = []
     try:
-        run_robot(SERVER_HOST, port=65432, action_history=action_history)
+        asyncio.run(run_robot(SERVER_HOST, port=65432, action_history=action_history))
     except Exception as e:
         print(f"发生错误: {e}")
         import traceback

@@ -61,6 +61,9 @@ class Stretch3GamePad(Teleoperator):
     def is_connected(self) -> bool:
         pass
 
+    def set_robot(self, robot: Any) -> None:
+        pass
+
     def connect(self, calibrate: bool = True) -> None:
         pass
 
@@ -81,4 +84,7 @@ class Stretch3GamePad(Teleoperator):
         pass
 
     def disconnect(self) -> None:
+        pass
+
+    def safety_stop(self):
         pass

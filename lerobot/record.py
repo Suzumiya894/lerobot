@@ -254,6 +254,60 @@ def record_loop(
         timestamp = time.perf_counter() - start_episode_t
         sliding_window.add(sent_action)
 
+@safe_stop_image_writer
+def stretch_server_record_loop(
+    robot: Robot,
+    events: dict,
+    fps: int,
+    dataset: LeRobotDataset | None = None,
+    control_time_s: int | None = None,
+    single_task: str | None = None,
+    display_data: bool = False,
+):
+    """
+    该函数用于在服务器端记录机器人端采到的数据。机器人端需运行script/stretch_client_teleop.py脚本。
+    """
+    if dataset is not None and dataset.fps != fps:
+        raise ValueError(f"The dataset fps should be equal to requested fps ({dataset.fps} != {fps}).")
+
+    timestamp = 0
+    episode_finished = False
+    while not episode_finished:
+        start_loop_t = time.perf_counter()
+
+        if events["exit_early"]:
+            events["exit_early"] = False
+            break
+
+        # stretch_client_teleop.py脚本中机器人端发送给服务器端的数据分为两种情况：
+        # 1. 包含observation和action。
+        # 2. 只包含{'episode_finished': True}，表示当前episode已完成。
+        data_dict = robot.get_observation() # get_observation()在stretch_server中的实现可以接受任意字典数据。 TODO(yew): 是否应该将其改为get_data()？
+        if "episode_finished" in data_dict:
+            episode_finished = data_dict["episode_finished"]
+            break
+        observation = data_dict.get("observation", {})
+        action = data_dict.get("action", {})
+
+
+        if dataset is not None:
+            observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
+            action_frame = build_dataset_frame(dataset.features, action, prefix="action")
+            frame = {**observation_frame, **action_frame}
+            dataset.add_frame(frame, task=single_task)
+
+        if display_data:
+            for obs, val in observation.items():
+                if isinstance(val, float):
+                    rr.log(f"observation.{obs}", rr.Scalar(val))
+                elif isinstance(val, np.ndarray):
+                    rr.log(f"observation.{obs}", rr.Image(val), static=True)
+            for act, val in action.items():
+                if isinstance(val, float):
+                    rr.log(f"action.{act}", rr.Scalar(val))
+
+        # dt_s = time.perf_counter() - start_loop_t
+        # busy_wait(1 / fps - dt_s)
 
 @parser.wrap()
 def record(cfg: RecordConfig) -> LeRobotDataset:
@@ -306,23 +360,34 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
 
     listener, events = init_keyboard_listener()
 
-    log_say("Warming Up. Waiting for 20 seconds...", cfg.play_sounds)
-    time.sleep(20) # Give time to the robot to connect and stabilize
+    log_say("Warming Up. Waiting for 5 seconds...", cfg.play_sounds)
+    time.sleep(5) # Give time to the robot to connect and stabilize
     robot.calibrate()
 
     for recorded_episodes in range(cfg.dataset.num_episodes):
         log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
-        record_loop(
-            robot=robot,
-            events=events,
-            fps=cfg.dataset.fps,
-            teleop=teleop,
-            policy=policy,
-            dataset=dataset,
-            control_time_s=cfg.dataset.episode_time_s,
-            single_task=cfg.dataset.single_task,
-            display_data=cfg.display_data,
-        )
+        if policy is None and robot.name == "stretch3" and cfg.robot.is_remote_server == True:
+            stretch_server_record_loop(
+                robot=robot,
+                events=events,
+                fps=cfg.dataset.fps,
+                dataset=dataset,
+                control_time_s=cfg.dataset.episode_time_s,
+                single_task=cfg.dataset.single_task,
+                display_data=cfg.display_data,
+            )
+        else:
+            record_loop(
+                robot=robot,
+                events=events,
+                fps=cfg.dataset.fps,
+                teleop=teleop,
+                policy=policy,
+                dataset=dataset,
+                control_time_s=cfg.dataset.episode_time_s,
+                single_task=cfg.dataset.single_task,
+                display_data=cfg.display_data,
+            )
 
         start_reset_time = time.perf_counter()
         log_say("Reset the environment", cfg.play_sounds)
