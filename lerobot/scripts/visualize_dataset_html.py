@@ -237,7 +237,7 @@ def get_episode_data(dataset: LeRobotDataset | IterableNamespace, episode_index)
     This file will be loaded by Dygraph javascript to plot data in real time."""
     columns = []
 
-    selected_columns = [col for col, ft in dataset.features.items() if ft["dtype"] in ["float32", "int32"]]
+    selected_columns = [col for col, ft in dataset.features.items() if ft["dtype"] in ["float32", "int32", "string"]]
     selected_columns.remove("timestamp")
 
     ignored_columns = []
@@ -287,12 +287,34 @@ def get_episode_data(dataset: LeRobotDataset | IterableNamespace, episode_index)
         df = pd.read_parquet(url)
         data = df[selected_columns]  # Select specific columns
 
-    rows = np.hstack(
-        (
-            np.expand_dims(data["timestamp"], axis=1),
-            *[np.vstack(data[col]) for col in selected_columns[1:]],
-        )
-    ).tolist()
+    # Handle different data types properly
+    processed_columns = [np.expand_dims(data["timestamp"], axis=1)]
+
+    for col in selected_columns[1:]:
+        col_data = data[col]
+        if dataset.features[col]["dtype"] == "string":
+            # For string columns, convert boolean strings to numeric values
+            col_values = col_data.values
+            # Check if this is a boolean-like string column
+            if all(val in ["True", "False", True, False] for val in col_values if pd.notna(val)):
+                # Convert "True"/"False" strings to 1/0
+                numeric_values = []
+                for val in col_values:
+                    if val == "True" or val is True:
+                        numeric_values.append(1)
+                    elif val == "False" or val is False:
+                        numeric_values.append(0)
+                    else:
+                        numeric_values.append(val)  # Keep other values as is
+                processed_columns.append(np.expand_dims(np.array(numeric_values), axis=1))
+            else:
+                # For regular string columns, keep as string
+                processed_columns.append(np.expand_dims(col_values, axis=1))
+        else:
+            # For numeric columns, use vstack as before
+            processed_columns.append(np.vstack(col_data))
+    
+    rows = np.hstack(processed_columns).tolist()
 
     # Convert data to CSV string
     csv_buffer = StringIO()

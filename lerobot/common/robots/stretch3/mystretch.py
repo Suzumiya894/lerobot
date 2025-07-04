@@ -105,8 +105,7 @@ class MyStretchRobot(Robot):
         if not self.api.is_homed():
             self.api.home()
         self.head_look_at_end()
-        self.api.base.reset_odometry()  # 重置底盘位置
-        self.api.base.pull_status()     # 确保底盘坐标重置为0
+        self.reset_base_odometry()
     
     @property
     def is_calibrated(self) -> bool:
@@ -233,6 +232,8 @@ class MyStretchRobot(Robot):
             # 每10次强制调用一次home()进行校准归位，避免累积误差
             self.api.home()
             self.fast_reset_count = 0
+            self.reset_base_odometry()
+            self.head_look_at_end()
             return
 
         HOME_POS = {'head_pan.pos': -1.57, 'head_tilt.pos': -0.787, 'lift.pos': 0.60, 'arm.pos': 0.10, 'wrist_pitch.pos': -0.628, 'wrist_roll.pos': 0.0, 'wrist_yaw.pos': 0.00, 'gripper.pos': 0.00}    # 归位时不再归位底盘，而是手动归位底盘
@@ -253,12 +254,20 @@ class MyStretchRobot(Robot):
         if force_home:
             self.api.home()  # 如果有偏差，调用home()进行精确复位
             self.fast_reset_count = 0
-            return 
+            self.reset_base_odometry()
+            self.head_look_at_end()
+            return
         self.fast_reset_count += 1
-        self.api.base.reset_odometry()  # 重置底盘位置
-        self.api.base.pull_status()     # 确保底盘坐标重置为0
+        self.reset_base_odometry()
 
-        
+    def reset_base_odometry(self) -> None:
+        """
+        重置底盘位置，确保底盘坐标重置为0。
+        """
+        if not self._is_connected:
+            raise ConnectionError()
+        self.api.base.reset_odometry()
+        self.api.base.pull_status()
 
     def get_observation(self) -> dict[str, np.ndarray]:
 

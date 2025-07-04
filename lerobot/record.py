@@ -186,6 +186,9 @@ def record_loop(
 
     sliding_window = RecoverySlidingWindow(WINDOW_SIZE, RECOVER_STEP)
 
+    events["is_failure_recovery"] = False   # 在每个episode开始前重置为False
+
+
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
 
@@ -235,7 +238,7 @@ def record_loop(
         
         if dataset is not None:
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
-            frame = {**observation_frame, **action_frame}
+            frame = {**observation_frame, **action_frame, "is_failure_recovery": str(events["is_failure_recovery"])}
             dataset.add_frame(frame, task=single_task)
 
         if display_data:
@@ -267,7 +270,13 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
 
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)
-    dataset_features = {**action_features, **obs_features}
+    dataset_features = {**action_features, **obs_features,
+                        "is_failure_recovery" : {
+                            "dtype": "string",
+                            "shape": (1,),
+                            "names": None,
+                        }
+                    }
 
     if cfg.resume:
         dataset = LeRobotDataset(
@@ -306,8 +315,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
 
     listener, events = init_keyboard_listener()
 
-    log_say("Warming Up. Waiting for 20 seconds...", cfg.play_sounds)
-    time.sleep(20) # Give time to the robot to connect and stabilize
+    log_say("Warming Up. Waiting for 5 seconds...", cfg.play_sounds)
+    time.sleep(5) # Give time to the robot to connect and stabilize
     robot.calibrate()
 
     for recorded_episodes in range(cfg.dataset.num_episodes):
@@ -340,12 +349,19 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         if not events["stop_recording"] and (
             (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
         ):
+            
+            if events["pause"]:
+                log_say("Recording paused. Press 'p' again to resume.", cfg.play_sounds)
+                while events["pause"]:
+                    time.sleep(5)
+                log_say("Recording resumed. Waiting for 10 seconds to warmup", cfg.play_sounds)
+                time.sleep(10)
+
             real_reset_time = max(cfg.dataset.reset_time_s - (time.perf_counter() - start_reset_time), 0)
             if robot.name == "stretch3":
                 if teleop is not None:
                     teleop.safety_stop()
                 robot.reset_to_home()
-                robot.head_look_at_end()
                 time.sleep(real_reset_time)
             else:
                 record_loop(
@@ -371,6 +387,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
 
     if not is_headless() and listener is not None:
         if isinstance(listener, threading.Thread):
+            events["stop_recording"] = True
             listener.join()
         else:
             listener.stop()
