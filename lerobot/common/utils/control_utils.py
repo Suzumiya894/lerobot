@@ -104,6 +104,7 @@ def predict_action(
     use_amp: bool,
     task: str | None = None,
     robot_type: str | None = None,
+    predict_actions: bool = False,
 ):
     observation = copy(observation)
     with (
@@ -124,12 +125,17 @@ def predict_action(
         observation["task"] = task if task else ""
         observation["robot_type"] = robot_type if robot_type else ""
 
-        # Compute the next action with the policy
-        # based on the current observation
-        action = policy.select_action(observation)
+        if predict_actions:
+            action = policy.select_actions(observation)
+            action = action.squeeze(1)  # Remove batch dimension
+            # return shape: (n_action_steps, action_dim)
+        else:
+            # Compute the next action with the policy
+            # based on the current observation
+            action = policy.select_action(observation)
 
-        # Remove batch dimension
-        action = action.squeeze(0)
+            # Remove batch dimension
+            action = action.squeeze(0)
 
         # Move to cpu, if not already the case
         action = action.to("cpu")
