@@ -1,3 +1,7 @@
+"""
+Run command:
+python lerobot/scripts/stretch_client_inference.py --single_task="Take the water bottle from the bottom-left of the box and place it inside the top tier of the cabinet." --repo_id="Suzumiya894/eval_BOF_LH_long_description" --root="./data/Suzumiya894/eval_BOF_LH_long_description" --episode_time_s=1000
+"""
 import socket
 import asyncio
 from collections import deque
@@ -26,10 +30,11 @@ async def my_record(robot: MyStretchRobot, dataset: LeRobotDataset, host: str, p
         return
 
     steps, cur_step = 0, 0
-    window_len = 50
+    window_len = 1
     todo_steps = deque(maxlen=window_len)
 
     timestamp = 0
+    start_episode_t = time.perf_counter()
 
     try:
     
@@ -40,29 +45,40 @@ async def my_record(robot: MyStretchRobot, dataset: LeRobotDataset, host: str, p
             # TODO: add keyboard listener
             # TODO: add recovery window
 
+            obs_start_t = time.perf_counter()
             observation = robot.get_observation()
-
+            print(f"捕获环境观测耗时: {time.perf_counter() - obs_start_t:.2f}秒")
             if len(todo_steps) > 0:
-                action = todo_steps.popleft()
+                action_values = todo_steps.popleft()
             else:
+                print("Todo steps is empty, waiting for server to send actions...")
                 await send_msg(writer, observation)
                 predicted_actions = await recv_msg(reader)
                 todo_steps.extend(predicted_actions)
                 if len(todo_steps) == 0:
                     print("与服务器的连接已断开。")
                     break
-                action = todo_steps.popleft()
+                action_values = todo_steps.popleft()
                 
+            action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
 
+            print(f"从服务器接收到动作指令: {action}")
+            action_start_t = time.perf_counter()
             sent_action = robot.send_action(action)
+            print(f"执行动作指令耗时: {time.perf_counter() - action_start_t:.2f}秒")
 
+            dataset_start_t = time.perf_counter()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
             dataset.add_frame(frame, task=single_task)
+            print(f"构建数据集帧耗时: {time.perf_counter() - dataset_start_t:.2f}秒")
 
             dt_s = time.perf_counter() - start_loop_t
+            print(f"总计用时: {dt_s:.2f}秒, 采集帧率: {1 / dt_s:.2f} FPS")
             busy_wait(1 / fps - dt_s)
+
+            timestamp = time.perf_counter() - start_episode_t
 
         dataset.save_episode()
 
@@ -103,8 +119,8 @@ if __name__ == "__main__":
                         help='每个episode之间的重置时间，单位为秒，默认为10秒')
     parser.add_argument('--num_episodes', 
                         type=int, 
-                        default=50, 
-                        help='数据集包含的episode数量，默认为50个')
+                        default=1, 
+                        help='数据集包含的episode数量，默认为1个')
     parser.add_argument('--play_sounds', 
                         type=bool, 
                         default=True, 
@@ -149,9 +165,24 @@ if __name__ == "__main__":
     # teleop.set_robot(robot.api)
     # teleop.connect()
     
+    robot.calibrate()
+
     try:
-        asyncio.run(my_record(robot, dataset, **vars(args)))
+        # Prepare arguments for my_record, excluding repo_id and root
+        record_args = {
+            "host": args.host,
+            "port": args.port,
+            "fps": args.fps,
+            "warmup_time": args.warmup_time,
+            "episode_time_s": args.episode_time_s,
+            "reset_time_s": args.reset_time_s,
+            "num_episodes": args.num_episodes,
+            "play_sounds": args.play_sounds,
+            "single_task": args.single_task,
+        }
+        asyncio.run(my_record(robot, dataset, **record_args))
     except Exception as e:
+        dataset.save_episode()
         print(f"发生错误: {e}")
         import traceback
         traceback.print_exc()

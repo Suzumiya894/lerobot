@@ -60,9 +60,17 @@ class MyStretchRobot(Robot):
 
         self.fast_reset_count = 0
         self.control_mode = self.config.control_mode
+        self.control_action_use_head = config.control_action_use_head
+        self.control_action_base_only_x = config.control_action_base_only_x
 
         self.observation_states = [i + ".pos" for i in self.STRETCH_STATE]
-        self.action_spaces = [i + ".vel" for i in self.STRETCH_STATE]
+        self.action_spaces = [i + ".next_pos" if self.control_mode == "pos" else i + ".vel" for i in self.STRETCH_STATE]
+        if not self.control_action_use_head:
+            self.observation_states = self.observation_states[2:]
+            self.action_spaces = self.action_spaces[2:]
+        if self.control_action_base_only_x:
+            self.observation_states = self.observation_states[:-2]
+            self.action_spaces = self.action_spaces[:-2]
 
     @cached_property
     def _cameras_ft(self) -> dict[str, tuple[int, int, int]]:
