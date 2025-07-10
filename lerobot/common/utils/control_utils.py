@@ -156,6 +156,8 @@ def init_keyboard_listener():
     events["rerecord_episode"] = False
     events["stop_recording"] = False
     events["failure_rollback_step"] = 0
+    events["is_failure_recovery"] = False
+    events["pause"] = False
 
     if is_headless():
         logging.warning(
@@ -170,7 +172,7 @@ def init_keyboard_listener():
     import threading
     def keyboard_listener():
         """Dummy listener for headless environments."""
-        while not events["exit_early"]:
+        while not events["stop_recording"]:
             key = readchar.readkey()
             if key == readchar.key.RIGHT:
                 print("\nRight arrow key pressed. Exiting loop...\n")
@@ -186,6 +188,20 @@ def init_keyboard_listener():
             elif key == 'r':
                 print("\nKey 'r' pressed. Attempting to recover from failure...\n")
                 events["failure_rollback_step"] += 1
+            elif key == 'p':
+                print("\nKey 'p' pressed. Toggling pause state.\n")
+                events["pause"] = not events["pause"]
+                if events["pause"]:
+                    print("Recording paused. Press 'p' again to resume.")
+                else:
+                    print("Recording resumed.")
+            elif key == 'f':
+                print("\nKey 'f' pressed.")
+                if events["is_failure_recovery"]:
+                    print("Exiting failure recovery steps.\n")
+                else:
+                    print("Entering failure recovery steps.\n")
+                events["is_failure_recovery"] = not events["is_failure_recovery"]
     
     listener = threading.Thread(target=keyboard_listener, daemon=True)
     listener.start()
