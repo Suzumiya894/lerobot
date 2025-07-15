@@ -1,9 +1,8 @@
 """
 run command:
 
-CUDA_VISIBLE_DEVICES=0 python -m lerobot.scripts.stretch_server_inference \
+CUDA_VISIBLE_DEVICES=7 python -m lerobot.scripts.stretch_server_inference \
     --robot.type=stretch3 \
-    --dataset.video=true \
     --dataset.repo_id="None" \
     --dataset.single_task="None" \
     --policy.path=./outputs/train/box_of_water_long_horizon_fixed/checkpoints/080000/pretrained_model  \
@@ -20,7 +19,7 @@ from lerobot.common.robots import make_robot_from_config
 from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.utils.remote_utils import recv_msg, send_msg
-from lerobot.common.utils.control_utils import predict_action
+from lerobot.common.utils.control_utils import predict_action, init_keyboard_listener
 from lerobot.common.utils.utils import get_safe_torch_device
 
 
@@ -32,6 +31,13 @@ class LeRobotDatasetMetadataMock():
     def __init__(self, dataset_features):
         self.features = dataset_features
         self.stats = {}
+
+def reset_events(events:dict):
+    events["exit_early"] = False
+    events["rerecord_episode"] = False
+    events["stop_recording"] = False
+    events["failure_rollback_step"] = 0
+    return events
 
 @parser.wrap()
 def inference(cfg: RecordConfig):
@@ -49,9 +55,14 @@ def inference(cfg: RecordConfig):
 
     robot.connect()
 
+    listener, events = init_keyboard_listener()
+
     while True:
         try:
-            observation = robot.get_observation()
+            received_data = robot.get_observation()
+            observation, task_description = received_data["observation"], received_data["task"]
+            print(f"{task_description=}")
+            
             observation_frame = build_dataset_frame(dataset_features, observation, prefix="observation")
 
             predicted_actions = predict_action(
@@ -59,12 +70,15 @@ def inference(cfg: RecordConfig):
                 policy,
                 get_safe_torch_device(policy.config.device),
                 policy.config.use_amp,
-                task=single_task,
+                task=task_description,
                 robot_type=robot.robot_type,
                 predict_actions=True,
             )   # return shape: (n_action_steps, action_dim)
 
-            robot.send_action(predicted_actions)
+            to_send_data = {"action": predicted_actions, "event": events}
+            robot.send_action(to_send_data)
+
+            events = reset_events(events)
         except ConnectionError as e:
             print(f"主程序：检测到连接断开 ({e})。准备接受新连接...")
             time.sleep(5)

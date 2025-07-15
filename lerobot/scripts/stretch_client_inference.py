@@ -9,7 +9,7 @@ import time
 import argparse
 
 from lerobot.common.robots.stretch3.mystretch import MyStretchRobot, Stretch3RobotConfig
-from lerobot.common.teleoperators.stretch3_gamepad import Stretch3GamePad, Stretch3GamePadConfig
+from lerobot.common.utils.control_utils import RecoverySlidingWindow
 
 from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.common.datasets.image_writer import safe_stop_image_writer
@@ -19,8 +19,8 @@ from lerobot.common.utils.utils import log_say
 from lerobot.common.utils.robot_utils import busy_wait
 
 @safe_stop_image_writer
-async def my_record(robot: MyStretchRobot, dataset: LeRobotDataset, host: str, port: int, fps=30, warmup_time=20, episode_time_s=360, reset_time_s=10, num_episodes=1, play_sounds=True, single_task=None):
-    print(f"args: \n\t{host=}, \n\t{port=}, \n\t{fps=}, \n\t{warmup_time=}, \n\t{episode_time_s=}, \n\t{reset_time_s=}, \n\t{num_episodes=}")
+async def client_inference(robot: MyStretchRobot, dataset: LeRobotDataset, host: str, port: int, fps=30, episode_time_s=360, reset_time_s=10, num_episodes=1, single_task=None, recovery_window_len=80, recovery_step=20):
+    print(f"args: \n\t{host=}, \n\t{port=}, \n\t{fps=}, \n\t{episode_time_s=}, \n\t{reset_time_s=}, \n\t{num_episodes=}, \n\t{single_task=}, \n\t{recovery_window_len=}, \n\t{recovery_step=}")
 
     try:
         reader, writer = await asyncio.open_connection(host, port)
@@ -30,11 +30,13 @@ async def my_record(robot: MyStretchRobot, dataset: LeRobotDataset, host: str, p
         return
 
     steps, cur_step = 0, 0
-    window_len = 1
-    todo_steps = deque(maxlen=window_len)
+    action_window_len = 5
+    todo_steps = deque(maxlen=action_window_len)
 
     timestamp = 0
     start_episode_t = time.perf_counter()
+    sliding_window = RecoverySlidingWindow(recovery_window_len, recovery_step)
+    events = {}
 
     try:
     
@@ -52,8 +54,10 @@ async def my_record(robot: MyStretchRobot, dataset: LeRobotDataset, host: str, p
                 action_values = todo_steps.popleft()
             else:
                 print("Todo steps is empty, waiting for server to send actions...")
-                await send_msg(writer, observation)
-                predicted_actions = await recv_msg(reader)
+                to_send_data = {"observation": observation, "task": single_task}
+                await send_msg(writer, to_send_data)
+                recevied_data = await recv_msg(reader)
+                predicted_actions, events = recevied_data["action"], recevied_data["event"]
                 todo_steps.extend(predicted_actions)
                 if len(todo_steps) == 0:
                     print("与服务器的连接已断开。")
@@ -62,7 +66,16 @@ async def my_record(robot: MyStretchRobot, dataset: LeRobotDataset, host: str, p
                 
             action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
 
-            print(f"从服务器接收到动作指令: {action}")
+            if events["exit_early"]:
+                break
+
+            if events["failure_rollback_step"] > 0: 
+                print("尝试回滚失败")
+                action = sliding_window.get_recovery_actions(events["failure_rollback_step"])
+                events["failure_rollback_step"] = 0
+                todo_steps.clear()
+            else:
+                print(f"从服务器接收到动作指令: {action}")
             action_start_t = time.perf_counter()
             sent_action = robot.send_action(action)
             print(f"执行动作指令耗时: {time.perf_counter() - action_start_t:.2f}秒")
@@ -79,6 +92,7 @@ async def my_record(robot: MyStretchRobot, dataset: LeRobotDataset, host: str, p
             busy_wait(1 / fps - dt_s)
 
             timestamp = time.perf_counter() - start_episode_t
+            sliding_window.add(sent_action)
 
         dataset.save_episode()
 
@@ -104,11 +118,6 @@ if __name__ == "__main__":
                         type=str, 
                         default='10.176.44.2', 
                         help='服务器IP地址')
-    parser.add_argument('--warmup_time', 
-                        '--warmup-time',
-                        type=int, 
-                        default=20, 
-                        help='预热时间，单位为秒，默认为20秒')
     parser.add_argument('--episode_time_s', 
                         type=int, 
                         default=30, 
@@ -121,10 +130,6 @@ if __name__ == "__main__":
                         type=int, 
                         default=1, 
                         help='数据集包含的episode数量，默认为1个')
-    parser.add_argument('--play_sounds', 
-                        type=bool, 
-                        default=True, 
-                        help='是否播放声音提示，默认为True')
     parser.add_argument('--repo_id', 
                         type=str, 
                         required=True,
@@ -137,6 +142,14 @@ if __name__ == "__main__":
                         type=str, 
                         required=True,
                         help='任务自然语言描述（必填）')
+    parser.add_argument('--recovery_window_len', 
+                        type=int, 
+                        default=80, 
+                        help='失败恢复记录的动作滑动窗口的长度，默认为80个动作')
+    parser.add_argument('--recovery_step', 
+                        type=int, 
+                        default=20, 
+                        help='失败恢复记录的动作滑动窗口的步长，默认为20个动作')
 
     args = parser.parse_args()
 
@@ -168,19 +181,19 @@ if __name__ == "__main__":
     robot.calibrate()
 
     try:
-        # Prepare arguments for my_record, excluding repo_id and root
+        # Prepare arguments for client_inference, excluding repo_id and root
         record_args = {
             "host": args.host,
             "port": args.port,
             "fps": args.fps,
-            "warmup_time": args.warmup_time,
             "episode_time_s": args.episode_time_s,
             "reset_time_s": args.reset_time_s,
             "num_episodes": args.num_episodes,
-            "play_sounds": args.play_sounds,
             "single_task": args.single_task,
+            "recovery_window_len": args.recovery_window_len,
+            "recovery_step": args.recovery_step,
         }
-        asyncio.run(my_record(robot, dataset, **record_args))
+        asyncio.run(client_inference(robot, dataset, **record_args))
     except Exception as e:
         dataset.save_episode()
         print(f"发生错误: {e}")
