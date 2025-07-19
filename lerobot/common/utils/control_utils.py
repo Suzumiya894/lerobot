@@ -295,3 +295,11 @@ class RecoverySlidingWindow:
         self.current_index = recovery_index + 1
         print("Recovery action: ", self.window[recovery_index % self.window_size])
         return self.window[recovery_index % self.window_size]
+
+    def get_previous_action(self):
+        if self.current_index - 1 >= self.oldest_index:
+            self.current_index -= 1
+            return self.window[self.current_index % self.window_size]
+        else:
+            print("Warning: No previous action available.")
+            return self.window[self.oldest_index % self.window_size]

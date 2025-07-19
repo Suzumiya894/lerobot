@@ -30,7 +30,7 @@ async def client_inference(robot: MyStretchRobot, dataset: LeRobotDataset, host:
         return
 
     steps, cur_step = 0, 0
-    action_window_len = 5
+    action_window_len = 1
     todo_steps = deque(maxlen=action_window_len)
 
     timestamp = 0
@@ -71,7 +71,12 @@ async def client_inference(robot: MyStretchRobot, dataset: LeRobotDataset, host:
 
             if events["failure_rollback_step"] > 0: 
                 print("尝试回滚失败")
-                action = sliding_window.get_recovery_actions(events["failure_rollback_step"])
+                cur_step = 1 
+                while cur_step < events["failure_rollback_step"] * sliding_window.recovery_steps:
+                    action = sliding_window.get_previous_action()
+                    cur_step += 1
+                    robot.send_action(action)
+                action = sliding_window.get_previous_action()   # 回退的最后一步action，交由下面原本的逻辑执行，并保存在数据集中
                 events["failure_rollback_step"] = 0
                 todo_steps.clear()
             else:

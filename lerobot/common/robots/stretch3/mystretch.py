@@ -42,7 +42,10 @@ class MyStretchRobot(Robot):
         self.config = config
 
         self.robot_type = self.config.type
+        self.drop_navigation_camera = self.config.drop_navigation_camera
         self.cameras_configs = self.config.cameras
+        if self.drop_navigation_camera:
+            self.cameras_configs.pop("navigation", None)
 
         self.api = StretchAPI()
         self.cameras = make_cameras_from_configs(self.cameras_configs)
@@ -75,7 +78,10 @@ class MyStretchRobot(Robot):
     @cached_property
     def _cameras_ft(self) -> dict[str, tuple[int, int, int]]:
         # return {name: (cfg.height, cfg.width, 3) for name, cfg in self.config.cameras.items()}
-        return {"navigation":(1280, 720, 3), "head":(640, 480, 3), "wrist":(480, 640, 3)}   # 考虑旋转之后的features
+        if not self.drop_navigation_camera:
+            return {"navigation":(1280, 720, 3), "head":(640, 480, 3), "wrist":(480, 640, 3)}   # 考虑旋转之后的features
+        else:
+            return {"head":(640, 480, 3), "wrist":(480, 640, 3)}
     
     @cached_property
     def _state_ft(self) -> dict[str, type]:
