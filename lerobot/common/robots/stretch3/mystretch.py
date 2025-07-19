@@ -67,7 +67,12 @@ class MyStretchRobot(Robot):
         self.control_action_base_only_x = config.control_action_base_only_x
 
         self.observation_states = [i + ".pos" for i in self.STRETCH_STATE]
-        self.action_spaces = [i + ".next_pos" if self.control_mode == "pos" else i + ".vel" for i in self.STRETCH_STATE]
+        if self.control_mode == "vel":
+            self.action_spaces = [i + ".vel" for i in self.STRETCH_STATE]
+        elif self.control_mode == "pos_diff":
+            self.action_spaces = [i + ".pos_diff" for i in self.STRETCH_STATE]
+        else:  # default to "pos"
+            self.action_spaces = [i + ".next_pos" for i in self.STRETCH_STATE]
         if not self.control_action_use_head:
             self.observation_states = self.observation_states[2:]
             self.action_spaces = self.action_spaces[2:]
@@ -404,7 +409,7 @@ class MyStretchRobot(Robot):
     def send_action(self, action_args: dict[str, Any], control_mode: str = None) -> dict[str, Any]:
         if control_mode is None:
             control_mode = self.control_mode
-        assert control_mode in ['pos', 'vel'], "Control mode must be either 'pos' or 'vel'."
+        assert control_mode in ['pos', 'vel', 'pos_diff'], "Control mode must be either 'pos', 'vel' or 'pos_diff'."
 
         # 将 action_args 的键从 "head_pan.vel" 转换为 "head_pan" 等形式
         parsed_action_args = {key.split('.')[0] : value for key, value in action_args.items()}
@@ -413,10 +418,17 @@ class MyStretchRobot(Robot):
             self.send_action_pos(parsed_action_args)
         elif control_mode == 'vel':
             self.send_action_vel(parsed_action_args)
+        elif control_mode == 'pos_diff':
+            self.send_action_vel(parsed_action_args, vel_to_pos_coeff=1)
+
         return action_args
 
-    def send_action_vel(self, velocity: dict[str, Any]) -> dict[str, Any]:
-        vel_to_pos_coeff = 0.1 # TODO(yew): 针对不同关节，是否可以采用不同的系数？
+    def send_action_vel(self, velocity: dict[str, Any], vel_to_pos_coeff: float = 0.1) -> dict[str, Any]:
+        """
+        使用速度控制机器人。由于Stretch只提供了关节位置控制，因此该函数实际上是将速度转换为相对位置控制。\n
+        对于使用pos_diff（相对位置控制）的情况，vel_to_pos_coeff设置为1，即不需要进行缩放。
+        """
+        # vel_to_pos_coeff = 0.1 # TODO(yew): 针对不同关节，是否可以采用不同的系数？
         if not self._is_connected:
             raise ConnectionError()
 

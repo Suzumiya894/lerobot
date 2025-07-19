@@ -57,7 +57,12 @@ class StretchRobotServer(Robot):
         self.control_action_base_only_x = config.control_action_base_only_x
 
         self.observation_states = [i + ".pos" for i in self.STRETCH_STATE]
-        self.action_spaces = [i + ".next_pos" if self.control_mode == "pos" else i + ".vel" for i in self.STRETCH_STATE]
+        if self.control_mode == "vel":
+            self.action_spaces = [i + ".vel" for i in self.STRETCH_STATE]
+        elif self.control_mode == "pos_diff":
+            self.action_spaces = [i + ".pos_diff" for i in self.STRETCH_STATE]
+        else:  # default to "pos"
+            self.action_spaces = [i + ".next_pos" for i in self.STRETCH_STATE]
         if not self.control_action_use_head:
             self.observation_states = self.observation_states[2:]
             self.action_spaces = self.action_spaces[2:]

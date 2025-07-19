@@ -64,7 +64,7 @@ class Stretch3RobotConfig(RobotConfig):
 
     is_remote_server: bool = False
     server_port: int = 65432
-    control_mode: str = "pos" # ['pos', 'vel']
+    control_mode: str = "pos" # ['pos', 'vel', 'pos_diff']
     control_action_use_head: bool = False
     control_action_base_only_x: bool = True
     drop_navigation_camera: bool = True
