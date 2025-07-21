@@ -60,7 +60,7 @@ This configuration will override the default configuration for the robot and gam
 
 ### Record a dataset
 
-Before you record a dataset, check the local configuration file and make sure 'Stretch3RobotConfig' - 'control_mode' is set to 'vel'. This is because the configuration will also affect the dataset features.
+Before you record a dataset, check the local configuration file and make sure 'Stretch3RobotConfig' - 'control_mode' is set to 'vel'. This is because the configuration will also affect the dataset features. Also setting "control_action_use_head" to true and "control_action_base_only_x" to false will save the most information for dataset, and can use the dataset transfer script straightly.
 
 The default dataset features are:
 - observation:
@@ -91,6 +91,10 @@ python -m lerobot.record     \
 ```
 
 modify the parameters if necessary.
+
+The recording script offers keyboard control for the progress of the recording. You can press:
+- `Right Arrow`: Stop the current episode and start a new one.
+- 'p': Pause the recording. You can take a break and resume the recording later.
 
 ### Post Processing dataset
 
@@ -139,6 +143,35 @@ python lerobot/scripts/train.py \
 ```
 
 ### Inference
+
+We offer two ways to run inference with the trained policy. The main difference is whether the recorded dataset is saved on the robot or on the server. The first method, recording on the robot, is the recommended way to run inference, as it supports more features such as asynchronous inference.
+
+#### Recording on the robot
+
+First run this command on the server:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m lerobot.scripts.stretch_server_inference \
+    --robot.type=stretch3 \
+    --dataset.repo_id="None" \
+    --dataset.single_task="None" \
+    --policy.path=./outputs/train/{your_model}/checkpoints/080000/pretrained_model  \
+    --policy.device=cuda 
+```
+
+You will notice that the `--dataset.repo_id` and `--dataset.single_task` are set to "None". This is because the dataset is not recorded on the server, but on the robot. And the task is transferred from the script running on the robot. In this way, you can run the inference script stoplessly, while running different tasks on the robot.
+
+Then, run this command on the robot:
+
+```bash
+python lerobot/scripts/stretch_client_inference.py --single_task="{task description}" --repo_id="{your_huggingface_id}/eval_{repo_name}" --root="./data/{your_huggingface_id}/eval_{repo_name}" --episode_time_s=1000
+```
+
+Make sure the task description is aligned with the description in the dataset, and the repo_id is started with 'eval_'. The `--root` should be the path where you want to save the recorded dataset on the robot.
+
+You can use the keyboard to control the **server inference script**, such as press Right Arrow to stop the current episode, or press 'r' to call the failure recovery function. The failure recovery function will redo previous actions until reaching "press 'r' times" * "recovery_steps".
+
+#### Recording on the Server
 
 To run inference with the trained policy, you should first run this command on the server:
 
